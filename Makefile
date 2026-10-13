@@ -28,3 +28,7 @@ re: fclean
 	$(MAKE) all
 -include $(OBJECTS:.o=.d)
 .PHONY: all clean fclean re test sanitize
+
+ui-test: $(NAME)
+	python3 tests/ui_smoke.py
+.PHONY: ui-test
