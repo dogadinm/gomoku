@@ -1,0 +1,4 @@
+/build/
+/Gomoku
+*.save
+.DS_Store
