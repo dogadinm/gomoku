@@ -10,8 +10,11 @@ struct Move {
         return x == b.x && y == b.y;
     }
 };
+enum class Opening { Standard, Pro, Swap, Swap2 };
+const char *openingName(Opening opening);
 struct Rules {
     bool captures = true, doubleThree = true;
+    Opening opening = Opening::Standard;
 };
 struct State {
     std::array<int8_t, Cells> board{};

@@ -1,6 +1,19 @@
 #include "game.hpp"
 #include <algorithm>
+#include <cstdlib>
 namespace gomoku {
+const char *openingName(Opening opening) {
+    switch (opening) {
+    case Opening::Pro:
+        return "Pro";
+    case Opening::Swap:
+        return "Swap";
+    case Opening::Swap2:
+        return "Swap2";
+    default:
+        return "Standard";
+    }
+}
 static constexpr int dirs[4][2] = {{1, 0}, {0, 1}, {1, 1}, {1, -1}};
 int State::place(Move m) {
     board[m.y * Size + m.x] = static_cast<int8_t>(turn);
@@ -47,6 +60,12 @@ bool State::doubleThree(Move m) const {
 bool State::legal(Move m) const {
     if (winner || at(m.x, m.y) != 0)
         return false;
+    if (rules.opening == Opening::Pro) {
+        if (moves == 0 && !(m == Move{9, 9}))
+            return false;
+        if (moves == 2 && std::abs(m.x - 9) <= 2 && std::abs(m.y - 9) <= 2)
+            return false;
+    }
     State s = *this;
     int n = s.place(m);
     return !rules.doubleThree || n > 0 || !s.doubleThree(m);
@@ -135,7 +154,8 @@ uint64_t State::hash() const {
         h *= 1099511628211ULL;
     }
     for (int v :
-         {turn, pending, captured[1], captured[2], int(rules.captures), int(rules.doubleThree)}) {
+         {turn, pending, captured[1], captured[2], int(rules.captures), int(rules.doubleThree),
+          int(rules.opening), rules.opening == Opening::Pro ? std::min(moves, 3) : 3}) {
         h ^= v;
         h *= 1099511628211ULL;
     }

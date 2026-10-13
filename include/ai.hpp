@@ -1,10 +1,11 @@
 #pragma once
-#include "game.hpp"
+#include "session.hpp"
 #include <chrono>
 #include <vector>
 namespace gomoku {
 struct SearchResult {
     Move move{};
+    Choice choice = Choice::None;
     int depth = 0, score = 0;
     uint64_t nodes = 0, hits = 0;
     double milliseconds = 0;
@@ -13,6 +14,7 @@ struct SearchResult {
 class AI {
   public:
     SearchResult search(const State &state, int milliseconds = 420, int maxDepth = 12);
+    SearchResult act(const Session &session, int milliseconds = 420);
     static int evaluate(const State &s);
 
   private:

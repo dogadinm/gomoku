@@ -41,8 +41,10 @@ const char *side(int p) {
 bool computer(int mode, int turn) {
     return mode == 4 || (mode == 1 && turn == 2) || (mode == 3 && turn == 1);
 }
-void draw(const Session &session, const State &s, int cx, int cy, const SearchResult &last,
-          const char *message, bool busy, double elapsed, int mode, size_t viewing, Move hint) {
+void draw(const Session &session, const Session &displayed, int cx, int cy,
+          const SearchResult &last, const char *message, bool busy, double elapsed, int mode,
+          size_t viewing, Move hint) {
+    const State &s = displayed.state;
     erase();
     if (LINES < 28 || COLS < 76) {
         mvprintw(0, 0, "Please resize terminal to at least 76 columns x 28 rows.");
@@ -77,7 +79,12 @@ void draw(const Session &session, const State &s, int cx, int cy, const SearchRe
                 attroff(A_REVERSE);
         }
     }
-    mvprintw(3, 45, "Turn: %s", side(s.turn));
+    mvprintw(2, 45, "Opening: %s", openingName(s.rules.opening));
+    mvprintw(3, 45, "Player %d: %s", displayed.actor(), side(s.turn));
+    if (!displayed.openingActive())
+        mvprintw(4, 45, "Black: P%d / White: P%d",
+                 displayed.blackPlayer ? displayed.blackPlayer : 1,
+                 displayed.blackPlayer ? 3 - displayed.blackPlayer : 2);
     mvprintw(5, 45, "Captured X: %d / 10", s.captured[1]);
     mvprintw(6, 45, "Captured O: %d / 10", s.captured[2]);
     mvprintw(8, 45, "AI time: %7.1f ms", busy ? elapsed : last.milliseconds);
@@ -87,7 +94,7 @@ void draw(const Session &session, const State &s, int cx, int cy, const SearchRe
     mvprintw(12, 45, "Score: %d", last.score);
     mvprintw(14, 45, "Captures: %s", s.rules.captures ? "on" : "off");
     mvprintw(15, 45, "Double-three ban: %s", s.rules.doubleThree ? "on" : "off");
-    mvprintw(17, 45, "Move: %zu / %zu", viewing, session.history.size());
+    mvprintw(17, 45, "Action: %zu / %zu", viewing, session.history.size());
     if (s.winner == 3)
         mvprintw(19, 45, "Draw");
     else if (s.winner)
@@ -96,7 +103,18 @@ void draw(const Session &session, const State &s, int cx, int cy, const SearchRe
         mvprintw(19, 45, "Five! Capture to defend.");
     else if (busy)
         mvprintw(19, 45, "Thinking...");
-    mvprintw(21, 45, "PV:");
+    if (displayed.openingActive()) {
+        if (displayed.needsChoice()) {
+            mvprintw(18, 45, "P%d chooses color", displayed.actor());
+            mvprintw(20, 45, "B: Black / W: White");
+            if (s.rules.opening == Opening::Swap2 && !displayed.extended)
+                mvprintw(21, 45, "E: place two more stones");
+        } else {
+            mvprintw(18, 45, "P%d places setup stone %d/%d", displayed.actor(), s.moves + 1,
+                     displayed.extended ? 5 : 3);
+        }
+    } else
+        mvprintw(21, 45, "PV:");
     for (size_t i = 0; i < last.principal.size() && i < 5; ++i)
         mvprintw(22, 45 + int(i) * 6, "%c%d", 'A' + last.principal[i].x, last.principal[i].y + 1);
     mvprintw(24, 2, "Arrows/mouse: select  Enter/Space: place  H: hint  U: undo");
@@ -153,14 +171,17 @@ int run() {
             if (menu) {
                 erase();
                 mvprintw(2, 3, "GOMOKU");
-                mvprintw(4, 3, "1  Play as Black against AI");
+                mvprintw(4, 3, "1  Player 1 (Black before swap) vs AI");
                 mvprintw(5, 3, "2  Two humans with AI hints");
-                mvprintw(6, 3, "3  Play as White against AI");
+                mvprintw(6, 3, "3  Player 2 (White before swap) vs AI");
                 mvprintw(7, 3, "4  Watch AI vs AI");
                 mvprintw(9, 3, "C  Captures: %s", selected.captures ? "on" : "off");
                 mvprintw(10, 3, "D  Double-three restriction: %s",
                          selected.doubleThree ? "on" : "off");
-                mvprintw(12, 3, "Mandatory rules: both options ON. Q quits.");
+                mvprintw(11, 3, "O  Opening: %s", openingName(selected.opening));
+                mvprintw(12, 3, "Mandatory: Standard, both rules ON. Q quits.");
+                mvprintw(16, 3, "Swap: P1 sets 3 stones; P2 chooses a color.");
+                mvprintw(17, 3, "Swap2: P2 may add 2 stones, then P1 chooses.");
                 mvprintw(14, 3, "Use a terminal of at least 76 x 28 characters.");
                 refresh();
                 int ch = getch();
@@ -170,10 +191,14 @@ int run() {
                     selected.captures = !selected.captures;
                 if (ch == 'd' || ch == 'D')
                     selected.doubleThree = !selected.doubleThree;
+                if (ch == 'o' || ch == 'O')
+                    selected.opening =
+                        static_cast<Opening>((static_cast<int>(selected.opening) + 1) % 4);
                 if (ch >= '1' && ch <= '4') {
                     mode = ch - '0';
                     session = Session{};
                     session.state.rules = selected;
+                    cx = cy = 9;
                     viewing = 0;
                     last = {};
                     hint = {};
@@ -189,9 +214,11 @@ int run() {
                 last = worker.get();
                 if (hintJob) {
                     hint = last.move;
-                    message = "Suggested move marked with ?.";
+                    message = last.choice == Choice::Black   ? "Suggested choice: Black (B)."
+                              : last.choice == Choice::White ? "Suggested choice: White (W)."
+                                                             : "Suggested move marked with ?.";
                 } else {
-                    if (session.play(last.move)) {
+                    if (session.apply({last.move, last.choice})) {
                         viewing = session.history.size();
                         message = "AI moved.";
                     } else
@@ -200,18 +227,18 @@ int run() {
             }
             bool live = viewing == session.history.size();
             if (!busy && !paused && live && !session.state.winner &&
-                computer(mode, session.state.turn)) {
-                State snapshot = session.state;
+                computer(mode, session.actor())) {
+                Session snapshot = session;
                 started = std::chrono::steady_clock::now();
                 worker = std::async(std::launch::async, [snapshot] {
                     AI ai;
-                    return ai.search(snapshot);
+                    return ai.act(snapshot);
                 });
                 busy = true;
                 hintJob = false;
                 hint = {};
             }
-            State displayed = live ? session.state : session.position(viewing);
+            Session displayed = live ? session : session.replay(viewing);
             double elapsed = std::chrono::duration<double, std::milli>(
                                  std::chrono::steady_clock::now() - started)
                                  .count();
@@ -265,7 +292,8 @@ int run() {
             }
             if (ch == 'u' || ch == 'U') {
                 session.undo();
-                if (mode != 2 && mode != 4 && computer(mode, session.state.turn))
+                while (!session.history.empty() && mode != 2 && mode != 4 &&
+                       computer(mode, session.actor()))
                     session.undo();
                 viewing = session.history.size();
                 hint = {};
@@ -273,17 +301,31 @@ int run() {
                 message = "Move undone.";
                 continue;
             }
-            if (!live || session.state.winner || computer(mode, session.state.turn))
+            if (!live || session.state.winner || computer(mode, session.actor()))
                 continue;
             if (ch == 'h' || ch == 'H') {
-                State snapshot = session.state;
+                Session snapshot = session;
                 started = std::chrono::steady_clock::now();
                 worker = std::async(std::launch::async, [snapshot] {
                     AI ai;
-                    return ai.search(snapshot);
+                    return ai.act(snapshot);
                 });
                 busy = true;
                 hintJob = true;
+                continue;
+            }
+            if (session.needsChoice()) {
+                Choice choice = ch == 'b' || ch == 'B'   ? Choice::Black
+                                : ch == 'w' || ch == 'W' ? Choice::White
+                                : ch == 'e' || ch == 'E' ? Choice::Extend
+                                                         : Choice::None;
+                if (session.choose(choice)) {
+                    viewing = session.history.size();
+                    hint = {};
+                    last = {};
+                    message = choice == Choice::Extend ? "Place one White and one Black stone."
+                                                       : "Colors assigned; White moves next.";
+                }
                 continue;
             }
             if (ch == KEY_MOUSE) {
@@ -301,7 +343,7 @@ int run() {
                     hint = {};
                     message = "Move played.";
                 } else
-                    message = "Illegal move: occupied square or forbidden double-three.";
+                    message = "Illegal move: occupied square, opening restriction or double-three.";
             }
         } catch (const std::bad_alloc &) {
             message = "Not enough memory; try undo or start a new game.";

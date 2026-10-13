@@ -190,4 +190,40 @@ SearchResult AI::search(const State &s, int milliseconds, int maxDepth) {
         std::chrono::duration<double, std::milli>(std::chrono::steady_clock::now() - start).count();
     return result;
 }
+SearchResult AI::act(const Session &session, int milliseconds) {
+    if (!session.openingActive())
+        return search(session.state, milliseconds);
+    auto start = std::chrono::steady_clock::now();
+    SearchResult result;
+    if (session.needsChoice()) {
+        // Both choices are available: take the color favored by a normal search.
+        result = search(session.state, milliseconds);
+        int favored = result.score >= 0 ? session.state.turn : 3 - session.state.turn;
+        result.choice = favored == 1 ? Choice::Black : Choice::White;
+        result.move = {};
+        result.principal.clear();
+    } else {
+        // The opponent may choose either color: propose a balanced setup.
+        int best = Infinity;
+        for (Move move : session.state.candidates()) {
+            Session next = session;
+            if (!next.play(move))
+                continue;
+            int score = std::abs(evaluate(next.state));
+            int distance = std::abs(move.x - 9) + std::abs(move.y - 9);
+            int rank = score * 100 + distance;
+            if (rank < best) {
+                best = rank;
+                result.move = move;
+                result.score = score;
+            }
+            ++result.nodes;
+            if (std::chrono::steady_clock::now() - start >= std::chrono::milliseconds(milliseconds))
+                break;
+        }
+    }
+    result.milliseconds =
+        std::chrono::duration<double, std::milli>(std::chrono::steady_clock::now() - start).count();
+    return result;
+}
 } // namespace gomoku
