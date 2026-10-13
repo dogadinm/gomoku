@@ -15,13 +15,16 @@ The executable is `Gomoku`. `make clean`, `make fclean`, and `make re` are avail
 
 ## Play
 
-Choose Black versus AI, White versus AI, two humans, or AI versus AI from the opening menu. Black moves first. Mandatory rules are enabled by default; the menu can disable captures or the double-three restriction for custom games.
+Choose player 1 versus AI, player 2 versus AI, two humans, or AI versus AI from the opening menu. In Standard/Pro, player 1 owns Black and player 2 owns White. In Swap/Swap2, player identities stay fixed and colors are assigned during the opening. Black moves first. Mandatory rules are enabled by default; the menu can disable captures or the double-three restriction for custom games.
 
 | Key | Action |
 | --- | --- |
 | Arrow keys | Move the board cursor |
 | Enter / Space | Place a stone |
 | Mouse click | Select and play an intersection, when the terminal supports it |
+| O (menu) | Cycle Standard / Pro / Swap / Swap2 |
+| B / W (color choice) | Choose Black / White |
+| E (first Swap2 choice) | Add a White and a Black stone, then let the other player choose |
 | H | Ask for a suggested move, marked `?` |
 | U | Undo; against AI, return to the previous human turn |
 | S / L | Save / load `gomoku.save` in the current working directory |
@@ -30,7 +33,7 @@ Choose Black versus AI, White versus AI, two humans, or AI versus AI from the op
 | N | Return to the new-game menu |
 | Q | Quit |
 
-For AI-versus-AI replay or saving, pause first. Board mutations are disabled while the AI is thinking. Replay does not change the live game; advance to the last position to resume. Loading preserves the selected human/AI mode and restores the saved rules and moves. Saving replaces the previous `gomoku.save`.
+For AI-versus-AI replay or saving, pause first. Board mutations are disabled while the AI is thinking. Replay does not change the live game; advance to the last position to resume. Loading preserves the selected human/AI mode and restores the saved rules, opening phase, color ownership, and actions. Saving replaces the previous `gomoku.save`.
 
 The side panel shows captures, current player, outcome, running/last AI calculation time, completed search depth, visited nodes, cache hits, score, and an example principal variation (PV).
 
@@ -46,6 +49,21 @@ The side panel shows captures, current player, outcome, running/last AI calculat
 - A full board without a winner is a draw.
 
 See [architecture and defense notes](docs/ARCHITECTURE.md) for the exact implementation and suggested division between two teammates.
+
+## Opening bonuses
+
+Press **O in the starting menu** before selecting a game mode:
+
+- **Standard**: ordinary alternating moves without opening restrictions; the default mandatory mode.
+- **Pro**: the first Black stone must be at the center (J10). White may play anywhere. Black's second stone must be outside the central 5×5 square (H8–L12). Subsequent moves are unrestricted by the opening.
+- **Swap**: player 1 places Black, White, Black. Player 2 chooses Black (`B`) or White (`W`). The player who owns White makes the next move.
+- **Swap2**: the same initial setup, but player 2 may instead press `E` and place White, Black. Player 1 then chooses a color. There is no second extension; White moves next.
+
+Setup placements do not trigger captures: they construct the opening position. After color assignment, the selected capture and double-three rules apply normally. These are opening protocols layered on this project's rules, not a switch to unrelated tournament win conditions.
+
+The panel shows the current player, setup stone, available choices, and final color ownership. The AI can place setup stones and choose either color. It builds a balanced setup using a static heuristic; when offered a color it uses timed search and picks the preferred side. It currently chooses a color directly rather than requesting the optional Swap2 extension, but handles an extension requested by a human. Opening setup depth is displayed as zero because it is not a Minimax search.
+
+Undo/replay count **actions**: placements and color/extension choices. Version 2 saves record all of them; legacy version 1 saves still load as Standard games.
 
 ## AI
 
@@ -66,4 +84,4 @@ make ui-test    # Real ncurses interaction through a PTY; requires Python 3
 
 The benchmark plays 12 AI moves from each of two deterministic openings and prints actual depth, runtime, nodes, and average time. It is a reproducible sample, not a guarantee for every position.
 
-Additional features beyond the mandatory modes: configurable rules, save/load, history replay, undo, and AI-versus-AI with pause. Standard/Pro/Swap/Swap2 opening protocols are **not** implemented. Bonus acceptance depends on the evaluator and requires the mandatory part to pass first.
+Additional features beyond the mandatory modes: configurable rules, save/load, history replay, undo, and AI-versus-AI with pause. Standard, Pro, Swap, and Swap2 openings are implemented. Bonus acceptance depends on the evaluator and requires the mandatory part to pass first.

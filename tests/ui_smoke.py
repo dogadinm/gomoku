@@ -51,7 +51,7 @@ def exercise():
             send(b"\x1bOC s")
             wait_for(b"Saved")
             save = Path(directory) / "gomoku.save"
-            assert save.read_text().splitlines() == ["GOMOKU 1", "1 1 2", "9 9", "10 9"]
+            assert save.read_text().splitlines() == ["GOMOKU 2", "1 1 0 2", "M 9 9", "M 10 9"]
             send(b"u")
             wait_for(b"undone")
             send(b"l")
@@ -68,7 +68,23 @@ def exercise():
             wait_for(b"AI moved", 5)
             send(b"s")
             wait_for(b"Saved")
-            assert save.read_text().splitlines()[1] == "1 1 1"
+            assert save.read_text().splitlines()[1] == "1 1 0 1"
+            send(b"n")
+            wait_for(b"Two humans")
+            send(b"ooo2")
+            wait_for(b"Game started")
+            send(b" \x1bOC \x1bOB e\x1bOD \x1bOB ws")
+            wait_for(b"Saved")
+            assert save.read_text().splitlines() == [
+                "GOMOKU 2", "1 1 3 7", "M 9 9", "M 10 9", "M 10 10",
+                "C 3", "M 9 10", "M 9 11", "C 2",
+            ]
+            send(b"us")
+            wait_for(b"Saved")
+            assert save.read_text().splitlines()[1] == "1 1 3 6"
+            send(b"lbs")
+            wait_for(b"Saved")
+            assert save.read_text().splitlines()[-1] == "C 1"
             fcntl.ioctl(master, termios.TIOCSWINSZ, struct.pack("HHHH", 20, 60, 0, 0))
             process.send_signal(signal.SIGWINCH)
             wait_for(b"Please resize")
