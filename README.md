@@ -68,21 +68,32 @@ Undo/replay count **actions**: placements and color/extension choices. Version 2
 
 ## AI
 
-Negamax is the symmetric form of Minimax. The engine uses alpha-beta pruning, iterative deepening, a fixed-size transposition table, and attack/defense move ordering. Evaluation checks whether each line has room to become five, weighs open/half-open/blocked and broken lines, scores current and potential captures (including simultaneous capture wins), and recognizes intersecting threats and capture/alignment combinations. A small dynamic component uses recent real actions to identify directional play and capture tendencies for both colors. Press **V** to inspect Lines, Potential captures, Captured stones, Figures, History, and Center scores separately for X and O.
+Negamax is the symmetric form of Minimax. The engine uses alpha-beta pruning, principal variation search (PVS), aspiration windows, iterative deepening, a fixed-size transposition table, and attack/defense move ordering. Evaluation checks whether each line has room to become five, weighs open/half-open/blocked and broken lines, scores current and potential captures (including simultaneous capture wins), and recognizes intersecting threats and capture/alignment combinations. A small dynamic component uses recent real actions to identify directional play and capture tendencies for both colors. Press **V** to inspect Lines, Potential captures, Captured stones, Figures, History, and Center scores separately for X and O.
 
 The default search budget is **420 ms**, with a maximum depth of **12 plies** (individual moves). The last fully completed iteration supplies the move; a legal fallback exists if time runs out before depth one. Immediate wins terminate early.
 
-**The search is selective, not an exhaustive search of every legal move to depth 12.** Candidates normally lie within two intersections of existing stones. Quiet continuation limits are 16 at the root, 6 at plies 1–2, 4 at plies 3–5, and 2 afterward. Immediate line/capture threats and verified defenses are retained beyond these limits. Before narrowing, the engine verifies immediate legal wins and filters replies to an opponent's immediate win. Defenses can block a completion, capture existing stones, or establish an anchor that permits capturing the opponent's next five. These checks honor the endgame-capture rule; a capturable five is not treated as a proven win. This trades tactical coverage for depth and speed; the UI reports the completed selective depth, not a guaranteed full-width depth. Hard positions or slower machines may complete fewer than ten plies. Acceptance and playing strength must still be checked on the evaluation machine.
+**The search is selective, not an exhaustive search of every legal move to depth 12.** Candidates normally lie within two intersections of existing stones. Quiet continuation limits are 16 at the root, 6 at plies 1–2, 4 at plies 3–5, and 2 afterward. Strong line/capture threats (ordering score at least 25,000) and verified defenses are retained beyond these limits. Before narrowing, the engine verifies immediate legal wins and filters replies to an opponent's immediate win. Defenses can block a completion, capture existing stones, or establish an anchor that permits capturing the opponent's next five. These checks honor the endgame-capture rule; a capturable five is not treated as a proven win. This trades tactical coverage for depth and speed; the UI reports the completed selective depth, not a guaranteed full-width depth. Hard positions or slower machines may complete fewer than ten plies. Acceptance and playing strength must still be checked on the evaluation machine.
+
+## Memory failure handling
+
+Candidate lists, ordering buffers, and the principal variation use fixed capacity; the recursive engine does not allocate them from the heap. If the transposition table cannot be allocated, search continues without it. If history analysis fails to allocate, it uses a neutral profile. The UI marks this as `Memory fallback active`.
+
+History edits, undo, and load preserve the current game if allocation fails. The UI returns to the live position in hotseat mode and keeps accepting input; starting a new game releases history. The real UI is tested with persistent C++ allocation failures as well as recovery. These tests cover C++ allocation paths, not every possible OS or ncurses failure.
 
 ## Verification
 
 ```sh
-make test       # Rules, tactical AI, replay/save validation, randomized undo invariants
-make sanitize   # The same tests with AddressSanitizer and UndefinedBehaviorSanitizer
-make ui-test    # Real ncurses interaction through a PTY; requires Python 3
+make test             # Rules, tactics, persistence and slow-reference comparisons
+make sanitize         # Rule/tactic/reference tests under ASan and UBSan
+make ui-test          # Real ncurses interaction through a PTY; requires Python 3
+make memory-test      # Inject C++ allocation failures into core and real UI
+make performance-test # 90 deterministic sampled positions; depth/time regression gate
+make arena-test       # Eight matches against 1-ply and 3-ply automated opponents
 ./Gomoku --bench
 ```
 
 The benchmark uses the same history-aware `AI::act()` path as the UI and plays 12 AI moves from each of two deterministic openings and prints actual depth, runtime, nodes, and average time. It is a reproducible sample, not a guarantee for every position.
+
+See [validation results](docs/VALIDATION.md) for the measured sample and [defense preparation](docs/DEFENSE.md) for explanations and a demonstration sequence.
 
 Additional features beyond the mandatory modes: configurable rules, save/load, history replay, undo, and AI-versus-AI with pause. Standard, Pro, Swap, and Swap2 openings are implemented. Bonus acceptance depends on the evaluator and requires the mandatory part to pass first.
