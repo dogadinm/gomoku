@@ -24,5 +24,9 @@ struct Tables {
     Tables();
     int classify(unsigned code, int player);
 };
-const Tables &tables();
+// Built on first use; inline so the hot paths of the board avoid a call.
+inline const Tables &tables() {
+    static const Tables value;
+    return value;
+}
 } // namespace gomoku

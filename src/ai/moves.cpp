@@ -56,6 +56,15 @@ int AI::Worker::generate(Candidates &out, Mode mode, int ttMove, int ply, int de
         int i = cells[n];
         if (b.at(i) || !b.near(i))
             continue;
+        if (mode != Normal) {
+            // Quiescence and threat search keep only fours, answers to fives
+            // and open threes, and captures: skip quiet cells before the full
+            // (ordering, legality) work.
+            const CellSummary &so = b.summary(i, us), &st = b.summary(i, them);
+            if (so.level < LevelFour && st.level < LevelOpenFour &&
+                !(b.rules.captures && (so.pairs || st.pairs)))
+                continue;
+        }
         const View o = view(b, i, us), t = view(b, i, them);
         // A threat counts only if the opponent may legally play it.
         bool theirWin = (t.pairs && b.captured[them] + 2 * t.pairs >= 10) ||

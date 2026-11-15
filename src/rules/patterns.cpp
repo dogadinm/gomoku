@@ -116,8 +116,4 @@ Tables::Tables() {
                     a.flags |= FreeThreeFlag;
         }
 }
-const Tables &tables() {
-    static const Tables value;
-    return value;
-}
 } // namespace gomoku

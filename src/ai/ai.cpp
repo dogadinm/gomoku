@@ -97,7 +97,11 @@ SearchResult AI::search(const State &s, int milliseconds, int maxDepth,
                     result.move = Board::move(w.rootBest);
                 result.score = score;
                 result.depth = depth;
-                if (std::abs(score) >= WinBound)
+                // A proven result ends the search early only when it is exact:
+                // a win on this move. Longer "proofs" rely on the narrowed
+                // answers to threats, so keep deepening (a deeper search may
+                // refute them) until the minimum depth.
+                if (score >= Win - 1 || (std::abs(score) >= WinBound && depth >= MinimumDepth))
                     break;
                 previous = last;
                 last = Clock::now() - began;
