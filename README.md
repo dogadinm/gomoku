@@ -25,6 +25,7 @@ Choose player 1 versus AI, player 2 versus AI, two humans, or AI versus AI from 
 | O (menu) | Cycle Standard / Pro / Swap / Swap2 |
 | B / W (color choice) | Choose Black / White |
 | E (first Swap2 choice) | Add a White and a Black stone, then let the other player choose |
+| V | Toggle per-color evaluation components while keeping the AI timer visible |
 | H | Ask for a suggested move, marked `?` |
 | U | Undo; against AI, return to the previous human turn |
 | S / L | Save / load `gomoku.save` in the current working directory |
@@ -48,7 +49,7 @@ The side panel shows captures, current player, outcome, running/last AI calculat
 - A non-capturing move creating open threes on two different axes is forbidden. Both straight and broken threes count: they can become an open four with one additional stone. Board edges and opponent stones close an end. Capturing moves are exempt, as specified in the subject appendix.
 - A full board without a winner is a draw.
 
-See [architecture and defense notes](docs/ARCHITECTURE.md) for the exact implementation and suggested division between two teammates.
+See [architecture and defense notes](docs/ARCHITECTURE.md) and the [grading checklist](docs/GRADING.md) for the exact implementation and suggested division between two teammates.
 
 ## Opening bonuses
 
@@ -67,11 +68,11 @@ Undo/replay count **actions**: placements and color/extension choices. Version 2
 
 ## AI
 
-Negamax is the symmetric form of Minimax. The engine uses alpha-beta pruning, iterative deepening, a fixed-size transposition table, and attack/defense move ordering. Evaluation rewards open lines, broken lines, captures, and central placement.
+Negamax is the symmetric form of Minimax. The engine uses alpha-beta pruning, iterative deepening, a fixed-size transposition table, and attack/defense move ordering. Evaluation checks whether each line has room to become five, weighs open/half-open/blocked and broken lines, scores current and potential captures (including simultaneous capture wins), and recognizes intersecting threats and capture/alignment combinations. A small dynamic component uses recent real actions to identify directional play and capture tendencies for both colors. Press **V** to inspect Lines, Potential captures, Captured stones, Figures, History, and Center scores separately for X and O.
 
 The default search budget is **420 ms**, with a maximum depth of **12 plies** (individual moves). The last fully completed iteration supplies the move; a legal fallback exists if time runs out before depth one. Immediate wins terminate early.
 
-**The search is selective, not an exhaustive search of every legal move to depth 12.** Candidates normally lie within two intersections of existing stones. Quiet continuation limits are 16 at the root, 6 at plies 1–2, 4 at plies 3–5, and 2 afterward. Immediate line/capture threats and replies to a pending five are retained beyond these limits. This trades tactical coverage for depth and speed; the UI reports the completed selective depth, not a guaranteed full-width depth. Hard positions or slower machines may complete fewer than ten plies. Acceptance and playing strength must still be checked on the evaluation machine.
+**The search is selective, not an exhaustive search of every legal move to depth 12.** Candidates normally lie within two intersections of existing stones. Quiet continuation limits are 16 at the root, 6 at plies 1–2, 4 at plies 3–5, and 2 afterward. Immediate line/capture threats and verified defenses are retained beyond these limits. Before narrowing, the engine verifies immediate legal wins and filters replies to an opponent's immediate win. Defenses can block a completion, capture existing stones, or establish an anchor that permits capturing the opponent's next five. These checks honor the endgame-capture rule; a capturable five is not treated as a proven win. This trades tactical coverage for depth and speed; the UI reports the completed selective depth, not a guaranteed full-width depth. Hard positions or slower machines may complete fewer than ten plies. Acceptance and playing strength must still be checked on the evaluation machine.
 
 ## Verification
 
@@ -82,6 +83,6 @@ make ui-test    # Real ncurses interaction through a PTY; requires Python 3
 ./Gomoku --bench
 ```
 
-The benchmark plays 12 AI moves from each of two deterministic openings and prints actual depth, runtime, nodes, and average time. It is a reproducible sample, not a guarantee for every position.
+The benchmark uses the same history-aware `AI::act()` path as the UI and plays 12 AI moves from each of two deterministic openings and prints actual depth, runtime, nodes, and average time. It is a reproducible sample, not a guarantee for every position.
 
 Additional features beyond the mandatory modes: configurable rules, save/load, history replay, undo, and AI-versus-AI with pause. Standard, Pro, Swap, and Swap2 openings are implemented. Bonus acceptance depends on the evaluator and requires the mandatory part to pass first.

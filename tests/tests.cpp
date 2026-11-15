@@ -204,6 +204,183 @@ void search() {
     ai.search(s, 10);
     require(hash == s.hash(), "search leaves state unchanged");
 }
+void heuristics() {
+    State blocked;
+    put(blocked, 8, 9, 1);
+    put(blocked, 9, 9, 1);
+    put(blocked, 6, 9, 2);
+    put(blocked, 11, 9, 2);
+    State room = blocked;
+    put(room, 11, 9, 0);
+    require(AI::inspect(room).alignments[1] > AI::inspect(blocked).alignments[1],
+            "lines need room for five, even with two empty ends");
+    State edge;
+    put(edge, 0, 0, 1);
+    put(edge, 1, 0, 1);
+    put(edge, 3, 0, 2);
+    State edgeRoom = edge;
+    put(edgeRoom, 3, 0, 0);
+    require(AI::inspect(edgeRoom).alignments[1] > AI::inspect(edge).alignments[1],
+            "edge limits development space");
+    State open;
+    for (int x = 8; x <= 10; ++x)
+        put(open, x, 9, 1);
+    State half = open;
+    put(half, 7, 9, 2);
+    State closed = half;
+    put(closed, 11, 9, 2);
+    require(AI::inspect(open).alignments[1] > AI::inspect(half).alignments[1] &&
+                AI::inspect(half).alignments[1] > AI::inspect(closed).alignments[1],
+            "open half-open and closed lines have different weights");
+    for (int dx = -1; dx <= 1; ++dx)
+        for (int dy = -1; dy <= 1; ++dy) {
+            if (!dx && !dy)
+                continue;
+            State s;
+            put(s, 9, 9, 1);
+            put(s, 9 + dx, 9 + dy, 2);
+            put(s, 9 + 2 * dx, 9 + 2 * dy, 2);
+            require(AI::inspect(s).potentialCaptures[1] > 0,
+                    "static evaluator sees capture in every direction");
+            s.rules.captures = false;
+            require(AI::inspect(s).potentialCaptures[1] == 0,
+                    "disabled captures have no potential bonus");
+        }
+    State capture;
+    for (int x : {6, 12})
+        put(capture, x, 9, 1);
+    for (int x : {7, 8, 10, 11})
+        put(capture, x, 9, 2);
+    auto ordinary = AI::inspect(capture);
+    capture.captured[1] = 6;
+    auto winning = AI::inspect(capture);
+    require(winning.potentialCaptures[1] > ordinary.potentialCaptures[1] + 200000,
+            "simultaneous pairs can reach ten captured stones");
+    require(winning.captures[1] == 9600, "captured stones have a separate static weight");
+    State cross;
+    for (int x = 6; x <= 9; ++x)
+        put(cross, x, 9, 1);
+    for (int y = 6; y <= 8; ++y)
+        put(cross, 9, y, 1);
+    auto doubleFour = AI::inspect(cross);
+    put(cross, 9, 6, 0);
+    auto fourThree = AI::inspect(cross);
+    put(cross, 9, 7, 0);
+    auto single = AI::inspect(cross);
+    require(doubleFour.figures[1] > fourThree.figures[1] &&
+                fourThree.figures[1] > single.figures[1],
+            "double four and four-three figures receive explicit bonuses");
+    State mixed;
+    for (int x = 6; x <= 8; ++x)
+        put(mixed, x, 9, 1);
+    put(mixed, 9, 12, 1);
+    put(mixed, 9, 10, 2);
+    put(mixed, 9, 11, 2);
+    require(AI::inspect(mixed).figures[1] >= 5000,
+            "capture and alignment at the same extension form a combination");
+    Session first, second;
+    const Move black[4] = {{7, 9}, {8, 9}, {9, 9}, {9, 10}};
+    const Move white[4] = {{0, 0}, {2, 1}, {4, 2}, {6, 3}};
+    const int order[4] = {0, 1, 3, 2};
+    for (int i = 0; i < 4; ++i) {
+        require(first.play(black[i]) && first.play(white[i]), "history fixture A");
+        require(second.play(black[order[i]]) && second.play(white[i]), "history fixture B");
+    }
+    require(first.state.hash() == second.state.hash(), "different histories reach the same board");
+    auto profileA = AI::historyProfile(first), profileB = AI::historyProfile(second);
+    require(profileA.axes[1] != profileB.axes[1],
+            "actual action order identifies different directional patterns");
+    require(AI::inspect(first.state, profileA).dynamic[1] !=
+                AI::inspect(second.state, profileB).dynamic[1],
+            "history changes evaluation of an identical position");
+    require(first.save("build/history.save"), "save history profile fixture");
+    Session loaded;
+    require(loaded.load("build/history.save") && AI::historyProfile(loaded).axes == profileA.axes,
+            "history profile survives load");
+    first.undo();
+    require(AI::historyProfile(first).axes ==
+                AI::historyProfile(first.replay(first.history.size())).axes,
+            "undo rebuilds history profile");
+    std::remove("build/history.save");
+    Session capturer;
+    for (Move m : {Move{3, 0}, Move{1, 0}, Move{10, 10}, Move{2, 0}, Move{0, 0}})
+        require(capturer.play(m), "capture history fixture");
+    require(AI::historyProfile(capturer).captures[1] > 0, "recent capture action affects profile");
+    capturer.undo();
+    require(AI::historyProfile(capturer).captures[1] == 0, "undo removes capture pattern");
+    State swapped = mixed;
+    for (auto &v : swapped.board)
+        if (v)
+            v = 3 - v;
+    swapped.turn = 3 - mixed.turn;
+    require(AI::evaluate(swapped) == AI::evaluate(mixed),
+            "evaluation treats both colors symmetrically");
+    State turned = mixed;
+    turned.turn = 3 - turned.turn;
+    require(AI::evaluate(turned) == -AI::evaluate(mixed), "evaluation is relative to side to move");
+}
+void tacticalDefense() {
+    AI ai;
+    for (int player : {1, 2})
+        for (int dx = -1; dx <= 1; ++dx)
+            for (int dy = -1; dy <= 1; ++dy) {
+                if (!dx && !dy)
+                    continue;
+                State s;
+                s.turn = player;
+                // One end is blocked, leaving a unique reply against four enemy stones.
+                put(s, 9 - 2 * dx, 9 - 2 * dy, player);
+                for (int k = -1; k <= 2; ++k)
+                    put(s, 9 + k * dx, 9 + k * dy, 3 - player);
+                auto result = ai.search(s, 40, 4);
+                require(result.move == Move{9 + 3 * dx, 9 + 3 * dy},
+                        "block forced five for either color in every direction");
+            }
+    State s;
+    s.captured[2] = 8;
+    put(s, 3, 0, 2);
+    put(s, 1, 0, 1);
+    put(s, 2, 0, 1);
+    auto result = ai.search(s, 100, 6);
+    State after = s;
+    require(after.play(result.move), "capture defense legal");
+    bool loses = false;
+    for (Move m : after.candidates()) {
+        State reply = after;
+        if (reply.play(m) && reply.winner == 2)
+            loses = true;
+    }
+    require(!loses, "prevent immediate capture victory");
+    s = State{};
+    for (int x = 6; x <= 9; ++x)
+        put(s, x, 9, 2);
+    put(s, 8, 10, 2);
+    put(s, 8, 11, 1);
+    result = ai.search(s, 100, 1);
+    require(result.move == Move{8, 8},
+            "static evaluation prefers capturing an open four to blocking one end");
+    s = State{};
+    s.captured[1] = 6;
+    for (int x : {6, 12})
+        put(s, x, 9, 1);
+    for (int x : {7, 8, 10, 11})
+        put(s, x, 9, 2);
+    result = ai.search(s, 50);
+    require(result.move == Move{9, 9}, "take winning simultaneous capture from six stones");
+    s = State{};
+    for (int x = 6; x <= 9; ++x)
+        put(s, x, 9, 2);
+    put(s, 8, 10, 2);
+    result = ai.search(s, 100, 1);
+    require(result.move == Move{8, 8} || result.move == Move{8, 11},
+            "quiet capture anchor can defend both ends of an open four");
+    s = State{};
+    // Filling the internal gap is the only defense against a broken four.
+    for (int x : {6, 7, 9, 10})
+        put(s, x, 9, 2);
+    result = ai.search(s, 50, 4);
+    require(result.move == Move{8, 9}, "block internal gap in a broken four");
+}
 void openings() {
     State pro;
     pro.rules.opening = Opening::Pro;
@@ -324,6 +501,8 @@ int main() {
         symmetries();
         persistence();
         search();
+        heuristics();
+        tacticalDefense();
         openings();
         randomGames();
         std::cout << checks << " checks passed\n";
