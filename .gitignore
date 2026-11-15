@@ -3,3 +3,4 @@
 *.save
 .DS_Store
 !demo/*.save
+/.vscode/
