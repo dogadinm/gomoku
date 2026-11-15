@@ -1,6 +1,7 @@
 #pragma once
 #include "game.hpp"
 #include <string>
+#include <vector>
 namespace gomoku {
 enum class Choice { None, Black, White, Extend };
 struct Action {

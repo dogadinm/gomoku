@@ -36,26 +36,28 @@ int State::place(Move m) {
 bool State::doubleThree(Move m) const {
     int axes = 0;
     for (auto &d : dirs) {
-        bool found = false;
-        // An open three can become .XXXX. with one move; both the new stone
-        // and the original move must belong to those four interior stones.
-        for (int start = -4; start <= 0 && !found; ++start) {
-            if (at(m.x + start * d[0], m.y + start * d[1]) != 0 ||
-                at(m.x + (start + 5) * d[0], m.y + (start + 5) * d[1]) != 0)
-                continue;
-            int stones = 0, empty = 0;
-            bool includes = false;
-            for (int k = 1; k <= 4; ++k) {
-                int off = start + k, v = at(m.x + off * d[0], m.y + off * d[1]);
-                stones += v == turn;
-                empty += v == 0;
-                includes |= off == 0;
-            }
-            found = includes && stones == 3 && empty == 1;
+        unsigned own = 0, empty = 0;
+        for (int off = -4; off <= 4; ++off) {
+            int v = at(m.x + off * d[0], m.y + off * d[1]);
+            own |= unsigned(v == turn) << (off + 4);
+            empty |= unsigned(v == 0) << (off + 4);
         }
-        axes += found;
+        if (__builtin_popcount(own) < 3)
+            continue;
+        for (int start = 0; start < 4; ++start) {
+            // Six cells .XXXX.; the just-played center belongs to the
+            // interior for each of these four windows.
+            if ((empty & (0x21u << start)) != (0x21u << start))
+                continue;
+            unsigned stones = (own >> (start + 1)) & 15u, gaps = (empty >> (start + 1)) & 15u;
+            if (__builtin_popcount(stones) == 3 && __builtin_popcount(gaps) == 1) {
+                if (++axes == 2)
+                    return true;
+                break;
+            }
+        }
     }
-    return axes >= 2;
+    return false;
 }
 bool State::legal(Move m) const {
     if (winner || at(m.x, m.y) != 0)
@@ -85,30 +87,53 @@ bool State::hasFive(int player) const {
                 }
     return false;
 }
+bool State::fiveAt(Move m, int player) const {
+    for (auto &d : dirs) {
+        int count = 1;
+        for (int sign : {-1, 1})
+            for (int k = 1; at(m.x + k * d[0] * sign, m.y + k * d[1] * sign) == player; ++k)
+                ++count;
+        if (count >= 5)
+            return true;
+    }
+    return false;
+}
 bool State::captureDefense(int player) const {
     State enemy = *this;
     enemy.turn = 3 - player;
     enemy.winner = 0;
+    // A capture must have an existing anchor. Inspect those anchors rather
+    // than copying and simulating the position at every empty intersection.
     for (int y = 0; y < Size; ++y)
         for (int x = 0; x < Size; ++x)
-            if (enemy.at(x, y) == 0) {
-                State s = enemy;
-                int n = s.place({x, y});
-                if (n && (s.captured[s.turn] >= 10 || !s.hasFive(player)))
-                    return true;
-            }
+            if (at(x, y) == enemy.turn)
+                for (auto &d : dirs)
+                    for (int sign : {-1, 1}) {
+                        int dx = d[0] * sign, dy = d[1] * sign;
+                        if (at(x + dx, y + dy) != player || at(x + 2 * dx, y + 2 * dy) != player ||
+                            at(x + 3 * dx, y + 3 * dy) != 0)
+                            continue;
+                        State s = enemy;
+                        s.place({x + 3 * dx, y + 3 * dy});
+                        if (s.captured[s.turn] >= 10 || !s.hasFive(player))
+                            return true;
+                    }
     return false;
 }
 bool State::play(Move m) {
     if (!legal(m))
         return false;
+    applyLegal(m);
+    return true;
+}
+void State::applyLegal(Move m) {
     place(m);
     ++moves;
     if (captured[turn] >= 10)
         winner = turn;
     else if (pending && hasFive(pending))
         winner = pending;
-    else if (hasFive(turn)) {
+    else if (fiveAt(m, turn)) {
         if (!rules.captures || !captureDefense(turn))
             winner = turn;
         else
@@ -118,11 +143,9 @@ bool State::play(Move m) {
     turn = 3 - turn;
     if (!winner && std::none_of(board.begin(), board.end(), [](int v) { return v == 0; }))
         winner = 3;
-    return true;
 }
-std::vector<Move> State::candidates(bool legalOnly) const {
-    std::vector<Move> out;
-    out.reserve(128);
+MoveList State::candidates(bool legalOnly) const {
+    MoveList out;
     bool occupied = false;
     std::array<bool, Cells> near{};
     for (int y = 0; y < Size; ++y)

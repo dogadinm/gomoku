@@ -7,6 +7,7 @@
 #include <iostream>
 #include <ncurses.h>
 #include <new>
+#include <optional>
 #include <unistd.h>
 using namespace gomoku;
 namespace {
@@ -106,6 +107,8 @@ void draw(const Session &session, const Session &displayed, int cx, int cy,
             mvprintw(10 + i, 45, "%-9s X:%d O:%d", labels[i], (*parts[i])[1], (*parts[i])[2]);
         }
     }
+    if (last.lowMemory)
+        mvprintw(16, 45, "Memory fallback active");
     mvprintw(17, 45, "Action: %zu / %zu", viewing, session.history.size());
     if (s.winner == 3)
         mvprintw(19, 45, "Draw");
@@ -243,7 +246,7 @@ int run() {
                 computer(mode, session.actor())) {
                 Session snapshot = session;
                 started = std::chrono::steady_clock::now();
-                worker = std::async(std::launch::async, [snapshot] {
+                worker = std::async(std::launch::async, [snapshot = std::move(snapshot)] {
                     AI ai;
                     return ai.act(snapshot);
                 });
@@ -251,7 +254,10 @@ int run() {
                 hintJob = false;
                 hint = {};
             }
-            Session displayed = live ? session : session.replay(viewing);
+            std::optional<Session> historical;
+            if (!live)
+                historical.emplace(session.replay(viewing));
+            const Session &displayed = live ? session : *historical;
             double elapsed = std::chrono::duration<double, std::milli>(
                                  std::chrono::steady_clock::now() - started)
                                  .count();
@@ -322,7 +328,7 @@ int run() {
             if (ch == 'h' || ch == 'H') {
                 Session snapshot = session;
                 started = std::chrono::steady_clock::now();
-                worker = std::async(std::launch::async, [snapshot] {
+                worker = std::async(std::launch::async, [snapshot = std::move(snapshot)] {
                     AI ai;
                     return ai.act(snapshot);
                 });
@@ -365,10 +371,14 @@ int run() {
             message = "Not enough memory; try undo or start a new game.";
             mode = 2;
             busy = false;
+            viewing = session.history.size();
+            explain = false;
         } catch (const std::exception &) {
             message = "Operation failed; current game remains available.";
             mode = 2;
             busy = false;
+            viewing = session.history.size();
+            explain = false;
         }
     }
     return 0;

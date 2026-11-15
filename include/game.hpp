@@ -1,7 +1,7 @@
 #pragma once
+#include "fixed_list.hpp"
 #include <array>
 #include <cstdint>
-#include <vector>
 namespace gomoku {
 constexpr int Size = 19, Cells = Size * Size;
 struct Move {
@@ -10,6 +10,7 @@ struct Move {
         return x == b.x && y == b.y;
     }
 };
+using MoveList = FixedList<Move, Cells>;
 enum class Opening { Standard, Pro, Swap, Swap2 };
 const char *openingName(Opening opening);
 struct Rules {
@@ -27,10 +28,13 @@ struct State {
     bool hasFive(int player) const;
     bool legal(Move m) const;
     bool play(Move m);
-    std::vector<Move> candidates(bool legalOnly = true) const;
+    MoveList candidates(bool legalOnly = true) const;
     uint64_t hash() const;
 
   private:
+    friend class AI;
+    void applyLegal(Move m);
+    bool fiveAt(Move m, int player) const;
     int place(Move m);
     bool doubleThree(Move m) const;
     bool captureDefense(int player) const;

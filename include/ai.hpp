@@ -1,7 +1,7 @@
 #pragma once
 #include "session.hpp"
 #include <chrono>
-#include <vector>
+#include <memory>
 namespace gomoku {
 struct SearchResult {
     Move move{};
@@ -9,7 +9,8 @@ struct SearchResult {
     int depth = 0, score = 0;
     uint64_t nodes = 0, hits = 0;
     double milliseconds = 0;
-    std::vector<Move> principal;
+    FixedList<Move, 64> principal;
+    bool lowMemory = false;
 };
 struct HistoryProfile {
     std::array<std::array<int, 4>, 3> axes{};
@@ -41,12 +42,14 @@ class AI {
         bool forcing;
         bool changesCaptures;
     };
-    std::vector<Entry> table;
+    static constexpr size_t TableSize = 1 << 16;
+    std::unique_ptr<Entry[]> table;
+    Move rootBest;
     std::chrono::steady_clock::time_point deadline;
     HistoryProfile history;
     uint64_t nodes = 0, hits = 0;
     int negamax(const State &s, int depth, int alpha, int beta, int ply);
-    std::vector<Ranked> ordered(const State &s, int ply, Move preferred) const;
+    FixedList<Ranked, Cells> ordered(const State &s, int ply, Move preferred) const;
     void checkTime() const;
 };
 } // namespace gomoku
