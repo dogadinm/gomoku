@@ -11,11 +11,23 @@ struct SearchResult {
     double milliseconds = 0;
     std::vector<Move> principal;
 };
+struct HistoryProfile {
+    std::array<std::array<int, 4>, 3> axes{};
+    std::array<int, 3> captures{};
+};
+struct Evaluation {
+    std::array<int, 3> alignments{}, potentialCaptures{}, captures{}, figures{}, dynamic{},
+        position{};
+    int score(int turn) const;
+};
 class AI {
   public:
-    SearchResult search(const State &state, int milliseconds = 420, int maxDepth = 12);
+    SearchResult search(const State &state, int milliseconds = 420, int maxDepth = 12,
+                        const HistoryProfile &profile = {});
     SearchResult act(const Session &session, int milliseconds = 420);
     static int evaluate(const State &s);
+    static Evaluation inspect(const State &s, const HistoryProfile &profile = {});
+    static HistoryProfile historyProfile(const Session &session);
 
   private:
     struct Entry {
@@ -27,9 +39,11 @@ class AI {
         Move move;
         int value;
         bool forcing;
+        bool changesCaptures;
     };
     std::vector<Entry> table;
     std::chrono::steady_clock::time_point deadline;
+    HistoryProfile history;
     uint64_t nodes = 0, hits = 0;
     int negamax(const State &s, int depth, int alpha, int beta, int ply);
     std::vector<Ranked> ordered(const State &s, int ply, Move preferred) const;

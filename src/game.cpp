@@ -120,7 +120,7 @@ bool State::play(Move m) {
         winner = 3;
     return true;
 }
-std::vector<Move> State::candidates() const {
+std::vector<Move> State::candidates(bool legalOnly) const {
     std::vector<Move> out;
     out.reserve(128);
     bool occupied = false;
@@ -139,11 +139,11 @@ std::vector<Move> State::candidates() const {
         return out;
     }
     for (int i = 0; i < Cells; ++i)
-        if (near[i] && legal({i % Size, i / Size}))
+        if (near[i] && (!legalOnly || legal({i % Size, i / Size})))
             out.push_back({i % Size, i / Size});
     if (out.empty())
         for (int i = 0; i < Cells; ++i)
-            if (legal({i % Size, i / Size}))
+            if (at(i % Size, i / Size) == 0 && (!legalOnly || legal({i % Size, i / Size})))
                 out.push_back({i % Size, i / Size});
     return out;
 }

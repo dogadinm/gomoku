@@ -16,8 +16,11 @@ int shape(int count, int open) {
     return weights[count][open];
 }
 // Fast move ordering includes attack, defense and capture opportunities.
-int potential(const State &s, Move m, int player) {
-    int value = 0;
+int potential(const State &s, Move m, int player, int *capturePairs = nullptr,
+              bool *captureAnchor = nullptr) {
+    if (captureAnchor)
+        *captureAnchor = false;
+    int value = 0, fours = 0, threes = 0, pairs = 0;
     for (auto &d : dirs) {
         int n = 1, open = 0;
         for (int sign : {-1, 1}) {
@@ -30,52 +33,102 @@ int potential(const State &s, Move m, int player) {
             if (s.rules.captures && s.at(m.x + d[0] * sign, m.y + d[1] * sign) == 3 - player &&
                 s.at(m.x + 2 * d[0] * sign, m.y + 2 * d[1] * sign) == 3 - player &&
                 s.at(m.x + 3 * d[0] * sign, m.y + 3 * d[1] * sign) == player)
-                value += s.captured[player] >= 8 ? 1000000 : 2200;
+                ++pairs;
+            if (s.rules.captures && captureAnchor &&
+                s.at(m.x + 3 * d[0] * sign, m.y + 3 * d[1] * sign) == 0) {
+                int a = s.at(m.x + d[0] * sign, m.y + d[1] * sign),
+                    b = s.at(m.x + 2 * d[0] * sign, m.y + 2 * d[1] * sign);
+                if ((a == 3 - player && (b == 0 || b == 3 - player)) || (b == 3 - player && a == 0))
+                    *captureAnchor = true;
+            }
         }
         value += shape(n, open);
+        fours += n == 4 && open > 0;
+        threes += n == 3 && open == 2;
     }
+    if (fours >= 2)
+        value += 100000;
+    else if (fours && threes)
+        value += 18000;
+    else if (threes >= 2)
+        value += 6000;
+    if (pairs)
+        value += 2200 * pairs + (s.captured[player] + pairs * 2 >= 10 ? 1000000 : 0);
+    if (capturePairs)
+        *capturePairs = pairs;
     return value;
 }
 } // namespace
-int AI::evaluate(const State &s) {
-    int scores[3] = {0, s.captured[1] * 1600, s.captured[2] * 1600};
-    for (int y = 0; y < Size; ++y)
-        for (int x = 0; x < Size; ++x) {
-            int p = s.at(x, y);
-            if (p <= 0)
-                continue;
-            scores[p] += 18 - std::abs(9 - x) - std::abs(9 - y);
-            for (auto &d : dirs) {
-                if (s.at(x - d[0], y - d[1]) == p)
-                    continue;
-                int n = 1;
-                while (s.at(x + n * d[0], y + n * d[1]) == p)
-                    ++n;
-                int open =
-                    (s.at(x - d[0], y - d[1]) == 0) + (s.at(x + n * d[0], y + n * d[1]) == 0);
-                scores[p] += shape(n, open);
-                // Broken lines are less valuable than uninterrupted lines, but not invisible.
-                if (n < 4 && s.at(x + n * d[0], y + n * d[1]) == 0) {
-                    int k = n + 1;
-                    while (s.at(x + k * d[0], y + k * d[1]) == p)
-                        ++k;
-                    if (k > n + 1 && k - 1 <= 4)
-                        scores[p] += shape(k - 1, 1) / 2;
-                }
-            }
-        }
-    return std::clamp(scores[s.turn] - scores[3 - s.turn], -Win / 2, Win / 2);
-}
 void AI::checkTime() const {
     if (std::chrono::steady_clock::now() >= deadline)
         throw Timeout{};
 }
 std::vector<AI::Ranked> AI::ordered(const State &s, int ply, Move preferred) const {
-    std::vector<Ranked> moves;
-    for (Move m : s.candidates()) {
-        int attack = potential(s, m, s.turn), defense = potential(s, m, 3 - s.turn);
+    std::vector<Ranked> moves, wins;
+    std::vector<Move> enemyWins;
+    State enemy = s;
+    enemy.turn = 3 - s.turn;
+    for (Move m : s.candidates(false)) {
+        if ((moves.size() & 15) == 0)
+            checkTime();
+        int pairs = 0;
+        bool anchor = false;
+        int attack = potential(s, m, s.turn, &pairs, &anchor),
+            defense = potential(s, m, 3 - s.turn);
+        if (defense >= 1000000 && !s.pending) {
+            State next = enemy;
+            if (next.play(m) && next.winner == enemy.turn)
+                enemyWins.push_back(m);
+        }
+        if (!s.legal(m))
+            continue;
         bool forcing = attack >= 1000000 || defense >= 1000000 || s.pending != 0;
-        moves.push_back({m, attack + defense * 9 / 10 + (m == preferred ? 5000000 : 0), forcing});
+        Ranked ranked{m, attack + defense * 9 / 10 + (m == preferred ? 5000000 : 0), forcing,
+                      pairs > 0 || anchor};
+        moves.push_back(ranked);
+        if (attack >= 1000000) {
+            State next = s;
+            if (next.play(m) && next.winner == s.turn)
+                wins.push_back(ranked);
+        }
+    }
+    // If every nearby square is forbidden, preserve the rules engine's
+    // fallback to legal distant squares instead of returning an empty root.
+    if (moves.empty()) {
+        for (Move m : s.candidates()) {
+            checkTime();
+            moves.push_back({m, potential(s, m, s.turn), false, false});
+        }
+    }
+    // Actual legal wins take precedence over threats and all quiet moves.
+    if (!wins.empty())
+        return wins;
+    if (s.pending || !enemyWins.empty()) {
+        std::vector<Ranked> defenses;
+        for (Ranked candidate : moves) {
+            // A reply can block the winning square, capture, or introduce an
+            // anchor that makes the next five vulnerable to a defensive capture.
+            if (!candidate.changesCaptures &&
+                (s.pending || enemyWins.size() != 1 || !(candidate.move == enemyWins.front())))
+                continue;
+            checkTime();
+            State next = s;
+            next.play(candidate.move);
+            bool loses = next.winner == 3 - s.turn;
+            for (Move threat : enemyWins) {
+                State reply = next;
+                if (reply.play(threat) && reply.winner == 3 - s.turn) {
+                    loses = true;
+                    break;
+                }
+            }
+            if (!loses) {
+                candidate.forcing = true;
+                defenses.push_back(candidate);
+            }
+        }
+        if (!defenses.empty())
+            moves = std::move(defenses);
     }
     std::stable_sort(moves.begin(), moves.end(),
                      [](const Ranked &a, const Ranked &b) { return a.value > b.value; });
@@ -98,7 +151,7 @@ int AI::negamax(const State &s, int depth, int alpha, int beta, int ply) {
     if (s.winner)
         return s.winner == 3 ? 0 : s.winner == s.turn ? Win : -Win;
     if (depth == 0)
-        return evaluate(s);
+        return inspect(s, history).score(s.turn);
     uint64_t key = s.hash();
     Entry &slot = table[key % table.size()];
     Move preferred{};
@@ -137,7 +190,9 @@ int AI::negamax(const State &s, int depth, int alpha, int beta, int ply) {
     slot = {key, depth, best, best <= originalAlpha ? 2 : best >= originalBeta ? 1 : 0, bestMove};
     return best;
 }
-SearchResult AI::search(const State &s, int milliseconds, int maxDepth) {
+SearchResult AI::search(const State &s, int milliseconds, int maxDepth,
+                        const HistoryProfile &profile) {
+    history = profile;
     auto start = std::chrono::steady_clock::now();
     deadline = start + std::chrono::milliseconds(std::max(1, milliseconds));
     nodes = hits = 0;
@@ -191,13 +246,23 @@ SearchResult AI::search(const State &s, int milliseconds, int maxDepth) {
     return result;
 }
 SearchResult AI::act(const Session &session, int milliseconds) {
-    if (!session.openingActive())
-        return search(session.state, milliseconds);
     auto start = std::chrono::steady_clock::now();
+    HistoryProfile profile = historyProfile(session);
+    int remaining = std::max(
+        1, milliseconds - static_cast<int>(std::chrono::duration_cast<std::chrono::milliseconds>(
+                                               std::chrono::steady_clock::now() - start)
+                                               .count()));
+    if (!session.openingActive()) {
+        auto result = search(session.state, remaining, 12, profile);
+        result.milliseconds =
+            std::chrono::duration<double, std::milli>(std::chrono::steady_clock::now() - start)
+                .count();
+        return result;
+    }
     SearchResult result;
     if (session.needsChoice()) {
         // Both choices are available: take the color favored by a normal search.
-        result = search(session.state, milliseconds);
+        result = search(session.state, remaining, 12, profile);
         int favored = result.score >= 0 ? session.state.turn : 3 - session.state.turn;
         result.choice = favored == 1 ? Choice::Black : Choice::White;
         result.move = {};

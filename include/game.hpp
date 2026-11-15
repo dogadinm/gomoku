@@ -27,7 +27,7 @@ struct State {
     bool hasFive(int player) const;
     bool legal(Move m) const;
     bool play(Move m);
-    std::vector<Move> candidates() const;
+    std::vector<Move> candidates(bool legalOnly = true) const;
     uint64_t hash() const;
 
   private:

@@ -43,7 +43,7 @@ bool computer(int mode, int turn) {
 }
 void draw(const Session &session, const Session &displayed, int cx, int cy,
           const SearchResult &last, const char *message, bool busy, double elapsed, int mode,
-          size_t viewing, Move hint) {
+          size_t viewing, Move hint, bool explain) {
     const State &s = displayed.state;
     erase();
     if (LINES < 28 || COLS < 76) {
@@ -94,6 +94,18 @@ void draw(const Session &session, const Session &displayed, int cx, int cy,
     mvprintw(12, 45, "Score: %d", last.score);
     mvprintw(14, 45, "Captures: %s", s.rules.captures ? "on" : "off");
     mvprintw(15, 45, "Double-three ban: %s", s.rules.doubleThree ? "on" : "off");
+    if (explain) {
+        Evaluation values = AI::inspect(s, AI::historyProfile(displayed));
+        const std::array<int, 3> *parts[] = {&values.alignments, &values.potentialCaptures,
+                                             &values.captures,   &values.figures,
+                                             &values.dynamic,    &values.position};
+        const char *labels[] = {"Lines", "Potential", "Captured", "Figures", "History", "Center"};
+        for (int i = 0; i < 6; ++i) {
+            move(10 + i, 45);
+            clrtoeol();
+            mvprintw(10 + i, 45, "%-9s X:%d O:%d", labels[i], (*parts[i])[1], (*parts[i])[2]);
+        }
+    }
     mvprintw(17, 45, "Action: %zu / %zu", viewing, session.history.size());
     if (s.winner == 3)
         mvprintw(19, 45, "Draw");
@@ -118,7 +130,7 @@ void draw(const Session &session, const Session &displayed, int cx, int cy,
     for (size_t i = 0; i < last.principal.size() && i < 5; ++i)
         mvprintw(22, 45 + int(i) * 6, "%c%d", 'A' + last.principal[i].x, last.principal[i].y + 1);
     mvprintw(24, 2, "Arrows/mouse: select  Enter/Space: place  H: hint  U: undo");
-    mvprintw(25, 2, "S/L: save/load  [ / ]: replay  P: pause AI  N: new  Q: quit");
+    mvprintw(25, 2, "S/L: save/load  [/]: replay  V: evaluation  P: pause  N: new  Q: quit");
     mvaddnstr(26, 2, message, COLS - 4);
     refresh();
 }
@@ -127,14 +139,15 @@ int benchmark(int games) {
     double total = 0, max = 0;
     int count = 0, minDepth = 100, deep = 0;
     for (int game = 0; game < games; ++game) {
-        State s;
+        Session session;
+        State &s = session.state;
         // Deterministic different openings make timing more useful than an empty board alone.
-        s.play({9, 9});
-        s.play({8 + game % 3, 10});
-        s.play({10, 9});
-        s.play({9, 8});
+        session.play({9, 9});
+        session.play({8 + game % 3, 10});
+        session.play({10, 9});
+        session.play({9, 8});
         for (int n = 0; n < 12 && !s.winner; ++n) {
-            auto r = ai.search(s);
+            auto r = ai.act(session);
             if (!s.legal(r.move))
                 return 1;
             std::cout << "position=" << count + 1 << " depth=" << r.depth << " ms=" << std::fixed
@@ -145,7 +158,7 @@ int benchmark(int games) {
             minDepth = std::min(minDepth, r.depth);
             deep += r.depth >= 10;
             ++count;
-            s.play(r.move);
+            session.play(r.move);
         }
     }
     std::cout << "Average " << total / count << " ms; maximum " << max << " ms; minimum depth "
@@ -159,7 +172,7 @@ int run() {
     Session session;
     Rules selected;
     int mode = 1, cx = 9, cy = 9;
-    bool menu = true, busy = false, hintJob = false, paused = false;
+    bool menu = true, busy = false, hintJob = false, paused = false, explain = false;
     size_t viewing = 0;
     Move hint;
     SearchResult last;
@@ -242,10 +255,13 @@ int run() {
             double elapsed = std::chrono::duration<double, std::milli>(
                                  std::chrono::steady_clock::now() - started)
                                  .count();
-            draw(session, displayed, cx, cy, last, message, busy, elapsed, mode, viewing, hint);
+            draw(session, displayed, cx, cy, last, message, busy, elapsed, mode, viewing, hint,
+                 explain);
             int ch = getch();
             if (ch == 'q' || ch == 'Q')
                 break;
+            if (ch == 'v' || ch == 'V')
+                explain = !explain;
             if (ch == 'p' || ch == 'P') {
                 paused = !paused;
                 message = paused ? "AI paused after current move." : "AI resumed.";
