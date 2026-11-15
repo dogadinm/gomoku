@@ -1,5 +1,5 @@
 #pragma once
-#include "game.hpp"
+#include "rules/game.hpp"
 #include <string>
 #include <vector>
 namespace gomoku {

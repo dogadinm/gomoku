@@ -2,3 +2,4 @@
 /Gomoku
 *.save
 .DS_Store
+!demo/*.save

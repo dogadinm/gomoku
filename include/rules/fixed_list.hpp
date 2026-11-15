@@ -5,7 +5,7 @@
 namespace gomoku {
 // A board has at most 361 moves. Bounded search lists never allocate memory.
 template <class T, std::size_t Capacity> class FixedList {
-    std::array<T, Capacity> values{};
+    std::array<T, Capacity> values; // only the first `count` are meaningful
     std::size_t count = 0;
 
   public:
@@ -19,6 +19,10 @@ template <class T, std::size_t Capacity> class FixedList {
     }
     void clear() {
         count = 0;
+    }
+    void resize(std::size_t n) {
+        assert(n <= count);
+        count = n;
     }
     void push_back(const T &value) {
         assert(count < Capacity);

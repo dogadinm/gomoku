@@ -1,4 +1,4 @@
-#include "session.hpp"
+#include "rules/session.hpp"
 #include <cstdio>
 #include <fstream>
 namespace gomoku {

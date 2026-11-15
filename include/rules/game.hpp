@@ -1,5 +1,5 @@
 #pragma once
-#include "fixed_list.hpp"
+#include "rules/fixed_list.hpp"
 #include <array>
 #include <cstdint>
 namespace gomoku {
@@ -30,13 +30,5 @@ struct State {
     bool play(Move m);
     MoveList candidates(bool legalOnly = true) const;
     uint64_t hash() const;
-
-  private:
-    friend class AI;
-    void applyLegal(Move m);
-    bool fiveAt(Move m, int player) const;
-    int place(Move m);
-    bool doubleThree(Move m) const;
-    bool captureDefense(int player) const;
 };
 } // namespace gomoku

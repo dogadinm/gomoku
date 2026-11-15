@@ -1,6 +1,6 @@
-#include "ai.hpp"
-#include "game.hpp"
-#include "session.hpp"
+#include "ai/ai.hpp"
+#include "rules/game.hpp"
+#include "rules/session.hpp"
 #include <cstdio>
 #include <fstream>
 #include <iostream>
@@ -256,16 +256,29 @@ void heuristics() {
     auto winning = AI::inspect(capture);
     require(winning.potentialCaptures[1] > ordinary.potentialCaptures[1] + 200000,
             "simultaneous pairs can reach ten captured stones");
-    require(winning.captures[1] == 9600, "captured stones have a separate static weight");
+    require(winning.captures[1] > ordinary.captures[1] && ordinary.captures[1] == 0,
+            "captured stones have a separate static weight");
+    State fewer = capture, more = capture;
+    fewer.captured[1] = 4;
+    more.captured[1] = 8;
+    require(AI::inspect(more).captures[1] - winning.captures[1] >
+                winning.captures[1] - AI::inspect(fewer).captures[1],
+            "each further captured pair is worth more");
+    // One empty square (9,9) that would make two fours, a four and an open
+    // three, or a single four.
     State cross;
-    for (int x = 6; x <= 9; ++x)
+    put(cross, 5, 9, 2);
+    for (int x = 6; x <= 8; ++x)
         put(cross, x, 9, 1);
+    put(cross, 9, 5, 2);
     for (int y = 6; y <= 8; ++y)
         put(cross, 9, y, 1);
     auto doubleFour = AI::inspect(cross);
+    put(cross, 9, 5, 0);
     put(cross, 9, 6, 0);
     auto fourThree = AI::inspect(cross);
     put(cross, 9, 7, 0);
+    put(cross, 9, 8, 0);
     auto single = AI::inspect(cross);
     require(doubleFour.figures[1] > fourThree.figures[1] &&
                 fourThree.figures[1] > single.figures[1],
@@ -356,9 +369,10 @@ void tacticalDefense() {
         put(s, x, 9, 2);
     put(s, 8, 10, 2);
     put(s, 8, 11, 1);
+    // Capturing one stone of an open four does not help: it is simply refilled.
     result = ai.search(s, 100, 1);
-    require(result.move == Move{8, 8},
-            "static evaluation prefers capturing an open four to blocking one end");
+    require(result.score <= -AI::WinBound,
+            "quiescence proves an open four wins despite a single capture");
     s = State{};
     s.captured[1] = 6;
     for (int x : {6, 12})

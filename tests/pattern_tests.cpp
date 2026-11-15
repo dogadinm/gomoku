@@ -1,4 +1,5 @@
-#include "patterns.hpp"
+#include "rules/board.hpp"
+#include <algorithm>
 #include <iostream>
 #include <random>
 #include <stdexcept>
@@ -62,6 +63,46 @@ bool slowLegal(const State &s, Move m) {
     int n = place(after, m);
     return !s.rules.doubleThree || n || !slowThree(after, m);
 }
+bool slowFiveAt(const State &s, Move m, int player) {
+    for (auto &d : dirs) {
+        int count = 1;
+        for (int sign : {-1, 1})
+            for (int k = 1; s.at(m.x + k * d[0] * sign, m.y + k * d[1] * sign) == player; ++k)
+                ++count;
+        if (count >= 5)
+            return true;
+    }
+    return false;
+}
+bool slowFive(const State &s, int player) {
+    for (int y = 0; y < Size; ++y)
+        for (int x = 0; x < Size; ++x)
+            if (s.at(x, y) == player && slowFiveAt(s, {x, y}, player))
+                return true;
+    return false;
+}
+bool slowDefense(const State &s, int player);
+// Straightforward reference of a full move: captures, then the win checks in
+// the order of the subject (ten captures, unanswered five, new five).
+void slowPlay(State &s, Move m) {
+    place(s, m);
+    ++s.moves;
+    int p = s.turn;
+    if (s.captured[p] >= 10)
+        s.winner = p;
+    else if (s.pending && slowFive(s, s.pending))
+        s.winner = s.pending;
+    else if (slowFiveAt(s, m, p)) {
+        if (!s.rules.captures || !slowDefense(s, p))
+            s.winner = p;
+        else
+            s.pending = p;
+    } else
+        s.pending = 0;
+    s.turn = 3 - p;
+    if (!s.winner && std::none_of(s.board.begin(), s.board.end(), [](int v) { return v == 0; }))
+        s.winner = 3;
+}
 bool slowDefense(const State &s, int player) {
     for (int y = 0; y < Size; ++y)
         for (int x = 0; x < Size; ++x)
@@ -69,17 +110,51 @@ bool slowDefense(const State &s, int player) {
                 State after = s;
                 after.turn = 3 - player;
                 int n = place(after, {x, y});
-                if (n && (after.captured[after.turn] >= 10 || !after.hasFive(player)))
+                if (n && (after.captured[after.turn] >= 10 || !slowFive(after, player)))
                     return true;
             }
     return false;
 }
 void compare(State s, Move m) {
-    MoveAnalyzer analyzer(s);
-    bool expected = slowLegal(s, m);
-    require(analyzer.inspect(m).legal == expected,
-            "lookup move legality differs from slow reference");
-    require(s.legal(m) == expected, "bit-mask double-three differs from slow reference");
+    require(s.legal(m) == slowLegal(s, m), "move legality differs from slow reference");
+}
+bool sameState(const State &a, const State &b) {
+    return a.board == b.board && a.captured == b.captured && a.turn == b.turn &&
+           a.winner == b.winner && a.pending == b.pending && a.moves == b.moves;
+}
+// The incremental board must agree with the slow reference on every rule, and
+// unmake must restore everything.
+void compareBoard(State s, std::mt19937 &rng, int plies) {
+    Board board(s);
+    for (int ply = 0; ply < plies && !s.winner; ++ply) {
+        require(sameState(board.state(), s), "board mirrors reference");
+        MoveList legal;
+        for (int i = 0; i < Cells; ++i) {
+            Move m{i % Size, i / Size};
+            bool expected = slowLegal(s, m);
+            require(board.legal(Board::index(m)) == expected, "board legality differs from reference");
+            if (expected)
+                legal.push_back(m);
+        }
+        if (legal.empty())
+            return;
+        uint64_t before = board.hash();
+        State saved = board.state();
+        Move m = legal[rng() % legal.size()];
+        Board::Undo undo;
+        board.make(Board::index(m), undo);
+        board.unmake(undo);
+        require(board.hash() == before && sameState(board.state(), saved),
+                "unmake restores board and key");
+        // Prefer moves near stones so that captures and fives actually occur.
+        auto nearby = s.candidates();
+        if (!nearby.empty() && rng() % 4)
+            m = nearby[rng() % nearby.size()];
+        slowPlay(s, m);
+        board.make(Board::index(m), undo);
+        require(sameState(board.state(), s), "board move result differs from reference");
+        require(Board(s).hash() == board.hash(), "incremental key equals rebuilt key");
+    }
 }
 } // namespace
 int main() {
@@ -128,19 +203,27 @@ int main() {
             if (!slowLegal(s, m))
                 continue;
             State expected = s;
-            place(expected, m);
-            ++expected.moves;
-            if (expected.captured[expected.turn] >= 10)
-                expected.winner = expected.turn;
-            else if (expected.hasFive(expected.turn)) {
-                if (!slowDefense(expected, expected.turn))
-                    expected.winner = expected.turn;
-                else
-                    expected.pending = expected.turn;
-            }
-            expected.turn = 3 - expected.turn;
+            slowPlay(expected, m);
             require(s.play(m) && s.hash() == expected.hash() && s.winner == expected.winner,
                     "anchor-based endgame check differs from exhaustive reference");
+        }
+        for (int game = 0; game < 40; ++game) {
+            State s;
+            s.rules.captures = game % 5 != 4;
+            s.rules.doubleThree = game % 7 != 6;
+            s.rules.opening = game % 6 == 0 ? Opening::Pro : Opening::Standard;
+            compareBoard(s, rng, 120);
+        }
+        for (int sample = 0; sample < 400; ++sample) {
+            State s;
+            s.turn = 1 + rng() % 2;
+            s.captured[1] = 2 * (rng() % 5);
+            s.captured[2] = 2 * (rng() % 5);
+            for (int i = 0; i < 70; ++i)
+                s.board[rng() % Cells] = 1 + rng() % 2;
+            if (slowFive(s, 1) || slowFive(s, 2))
+                continue;
+            compareBoard(s, rng, 6);
         }
         std::cout << checks << " reference comparison checks passed\n";
         return 0;

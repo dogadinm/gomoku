@@ -1,4 +1,4 @@
-#include "ai.hpp"
+#include "ai/ai.hpp"
 #include "fault.hpp"
 #include <cstdio>
 #include <iostream>

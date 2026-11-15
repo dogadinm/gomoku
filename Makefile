@@ -3,9 +3,12 @@ CXX := c++
 CPPFLAGS := -Iinclude
 CXXFLAGS := -std=c++17 -O3 -Wall -Wextra -Werror -MMD -MP
 LDLIBS := -lncurses -pthread
-CORE := src/game.cpp src/evaluation.cpp src/patterns.cpp src/ai.cpp src/session.cpp
-SOURCES := $(CORE) src/main.cpp
-HEADERS := $(wildcard include/*.hpp)
+RULES := $(addprefix src/rules/,game.cpp session.cpp board.cpp patterns.cpp)
+AI := $(addprefix src/ai/,ai.cpp search.cpp moves.cpp threats.cpp table.cpp evaluation.cpp history.cpp)
+CORE := $(RULES) $(AI)
+UI := $(addprefix src/ui/,main.cpp interface.cpp draw.cpp bench.cpp)
+SOURCES := $(CORE) $(UI)
+HEADERS := $(wildcard include/*/*.hpp)
 OBJECTS := $(SOURCES:src/%.cpp=build/%.o)
 TEST_FLAGS := $(filter-out -MMD -MP,$(CXXFLAGS))
 SANITIZE_FLAGS := -std=c++17 -g -O1 -Wall -Wextra -Werror -fsanitize=address,undefined
@@ -45,9 +48,9 @@ build/memory-tests: tests/memory.cpp tests/fault_allocator.cpp tests/fault.hpp $
 	@mkdir -p $(@D)
 	$(CXX) $(CPPFLAGS) $(TEST_FLAGS) tests/memory.cpp tests/fault_allocator.cpp $(CORE) -pthread -o $@
 
-build/Gomoku-oom: src/main.cpp tests/fault_allocator.cpp tests/fault.hpp $(CORE) $(HEADERS)
+build/Gomoku-oom: $(UI) tests/fault_allocator.cpp tests/fault.hpp $(CORE) $(HEADERS)
 	@mkdir -p $(@D)
-	$(CXX) $(CPPFLAGS) $(TEST_FLAGS) src/main.cpp tests/fault_allocator.cpp $(CORE) $(LDLIBS) -o $@
+	$(CXX) $(CPPFLAGS) $(TEST_FLAGS) $(UI) tests/fault_allocator.cpp $(CORE) $(LDLIBS) -o $@
 
 memory-test: build/memory-tests build/Gomoku-oom
 	./build/memory-tests
@@ -67,6 +70,13 @@ build/arena: tests/arena.cpp $(CORE) $(HEADERS)
 arena-test: build/arena
 	./build/arena
 
+build/demo-positions: tests/demo_positions.cpp $(RULES) $(HEADERS)
+	@mkdir -p $(@D)
+	$(CXX) $(CPPFLAGS) $(TEST_FLAGS) tests/demo_positions.cpp $(RULES) -o $@
+
+demo: build/demo-positions
+	./build/demo-positions
+
 clean:
 	rm -rf build
 
@@ -77,4 +87,4 @@ re: fclean
 	$(MAKE) all
 
 -include $(OBJECTS:.o=.d)
-.PHONY: all clean fclean re test sanitize ui-test memory-test performance-test arena-test
+.PHONY: all clean fclean re test sanitize ui-test memory-test performance-test arena-test demo

@@ -36,7 +36,7 @@ Choose player 1 versus AI, player 2 versus AI, two humans, or AI versus AI from 
 
 For AI-versus-AI replay or saving, pause first. Board mutations are disabled while the AI is thinking. Replay does not change the live game; advance to the last position to resume. Loading preserves the selected human/AI mode and restores the saved rules, opening phase, color ownership, and actions. Saving replaces the previous `gomoku.save`.
 
-The side panel shows captures, current player, outcome, running/last AI calculation time, completed search depth, visited nodes, cache hits, score, and an example principal variation (PV).
+The side panel shows captures, current player, outcome, running/last AI calculation time, completed search depth (with selective depth), visited nodes (all threads), cache hits, score, and an example principal variation (PV).
 
 ## Rules
 
@@ -48,6 +48,8 @@ The side panel shows captures, current player, outcome, running/last AI calculat
 - A five is provisional if the opponent can answer with a capture that removes all winning alignments, or can win immediately by reaching ten captures elsewhere. If the opponent fails to do so on the next move, the original five wins.
 - A non-capturing move creating open threes on two different axes is forbidden. Both straight and broken threes count: they can become an open four with one additional stone. Board edges and opponent stones close an end. Capturing moves are exempt, as specified in the subject appendix.
 - A full board without a winner is a draw.
+
+Ready-made positions demonstrating each rule are in [demo/](demo/README.md) (`./demo/play.sh 03`, then `2` and `L`).
 
 See [architecture and defense notes](docs/ARCHITECTURE.md) and the [grading checklist](docs/GRADING.md) for the exact implementation and suggested division between two teammates.
 
@@ -68,31 +70,44 @@ Undo/replay count **actions**: placements and color/extension choices. Version 2
 
 ## AI
 
-Negamax is the symmetric form of Minimax. The engine uses alpha-beta pruning, principal variation search (PVS), aspiration windows, iterative deepening, a fixed-size transposition table, and attack/defense move ordering. Evaluation checks whether each line has room to become five, weighs open/half-open/blocked and broken lines, scores current and potential captures (including simultaneous capture wins), and recognizes intersecting threats and capture/alignment combinations. A small dynamic component uses recent real actions to identify directional play and capture tendencies for both colors. Press **V** to inspect Lines, Potential captures, Captured stones, Figures, History, and Center scores separately for X and O.
+Negamax is the symmetric form of Minimax. The engine combines:
 
-The default search budget is **420 ms**, with a maximum depth of **12 plies** (individual moves). The last fully completed iteration supplies the move; a legal fallback exists if time runs out before depth one. Immediate wins terminate early.
+- alpha-beta pruning with principal variation search (PVS) and iterative deepening;
+- a shared, lock-free transposition table (Zobrist keys, 2^20 entries) that persists between moves;
+- several search threads (Lazy SMP, up to 4, never more than the machine reports);
+- a threat-space search (VCF, victory by continuous fours) before the main search;
+- quiescence search over fives, fours and answers to open threes at the horizon;
+- killer and history move ordering and late move reductions;
+- wins scored as `Win − ply`, so the AI prefers the fastest win and the longest defense.
 
-**The search is selective, not an exhaustive search of every legal move to depth 12.** Candidates normally lie within two intersections of existing stones. Quiet continuation limits are 16 at the root, 6 at plies 1–2, 4 at plies 3–5, and 2 afterward. Strong line/capture threats (ordering score at least 25,000) and verified defenses are retained beyond these limits. Before narrowing, the engine verifies immediate legal wins and filters replies to an opponent's immediate win. Defenses can block a completion, capture existing stones, or establish an anchor that permits capturing the opponent's next five. These checks honor the endgame-capture rule; a capturable five is not treated as a proven win. This trades tactical coverage for depth and speed; the UI reports the completed selective depth, not a guaranteed full-width depth. Hard positions or slower machines may complete fewer than ten plies. Acceptance and playing strength must still be checked on the evaluation machine.
+Search runs on `Board`, an incremental padded board with make/unmake. For every cell and axis it keeps a 2-bit code of the eight neighbors, mapped through a 65,536-entry table to the shape a stone would create there: five, open four, four, open three, and so on. Move generation, ordering, threat search and evaluation all read these per-cell shapes.
+
+The evaluation scores every empty cell near the stones for both colors, by what a stone there would create: Lines (per-axis shapes), Figures (one move making two threats, or two completion squares), Potential captures (worth more as captures accumulate; the tenth captured stone is decisive), Captured pairs (0 / 6k / 14k / 30k / 70k), a small dynamic History term learned from recent real moves, and Center. Press **V** to inspect each component for X and O.
+
+**Time and depth.** The target is **420 ms** per move. Depth 10 is always completed if possible within a hard limit of 472 ms. After that, a new iteration starts only if its predicted cost fits in 420 ms. The panel shows the last fully completed depth of the main thread, the selective depth (deepest ply including quiescence), and `VCF` when a forced win was found by the threat search.
+
+**The search is selective, not exhaustive.** Candidates lie within two intersections of existing stones. At the root up to 24 quiet moves are searched; at a node with remaining depth `d`, `3 + d/2`. The engine's own fours, the table move and every answer to a five threat are searched beyond that limit. Late quiet moves are reduced by one or two plies and re-searched if they turn out better. Against a five threat only blocks and captures are searched; against an open three, blocks, counter-fours and captures. These are standard gomoku prunings, not mathematically safe ones.
 
 ## Memory failure handling
 
-Candidate lists, ordering buffers, and the principal variation use fixed capacity; the recursive engine does not allocate them from the heap. If the transposition table cannot be allocated, search continues without it. If history analysis fails to allocate, it uses a neutral profile. The UI marks this as `Memory fallback active`.
+Candidate lists and the principal variation use fixed capacity; the recursive engine does not allocate from the heap. If the transposition table cannot be allocated, search continues without it; if a helper thread cannot start, search continues with fewer threads. If history analysis fails to allocate, it uses a neutral profile. The UI marks this as `Memory fallback active`.
 
 History edits, undo, and load preserve the current game if allocation fails. The UI returns to the live position in hotseat mode and keeps accepting input; starting a new game releases history. The real UI is tested with persistent C++ allocation failures as well as recovery. These tests cover C++ allocation paths, not every possible OS or ncurses failure.
 
 ## Verification
 
 ```sh
-make test             # Rules, tactics, persistence and slow-reference comparisons
+make test             # Rules, tactics, persistence; rules checked against a slow reference
 make sanitize         # Rule/tactic/reference tests under ASan and UBSan
 make ui-test          # Real ncurses interaction through a PTY; requires Python 3
 make memory-test      # Inject C++ allocation failures into core and real UI
 make performance-test # 90 deterministic sampled positions; depth/time regression gate
 make arena-test       # Eight matches against 1-ply and 3-ply automated opponents
+make demo             # Rebuild and re-check demo/*.save, one position per rule
 ./Gomoku --bench
 ```
 
-The benchmark uses the same history-aware `AI::act()` path as the UI and plays 12 AI moves from each of two deterministic openings and prints actual depth, runtime, nodes, and average time. It is a reproducible sample, not a guarantee for every position.
+The benchmark uses the same history-aware `AI::act()` path as the UI and plays 12 AI moves from each of two deterministic openings and prints actual depth, runtime, nodes, and average time. Positions where the search proved a win or loss are marked `proven`: such a search stops early, so the minimum depth is reported over the other positions. It is a reproducible sample, not a guarantee for every position.
 
 See [validation results](docs/VALIDATION.md) for the measured sample and [defense preparation](docs/DEFENSE.md) for explanations and a demonstration sequence.
 

@@ -1,4 +1,4 @@
-#include "ai.hpp"
+#include "ai/ai.hpp"
 #include <algorithm>
 #include <fstream>
 #include <iomanip>
@@ -30,7 +30,7 @@ int main() {
                         ++moves;
                         total += result.milliseconds;
                         maximum = std::max(maximum, result.milliseconds);
-                        if (result.depth < 10 && std::abs(result.score) < 10000000)
+                        if (result.depth < 10 && std::abs(result.score) < AI::WinBound)
                             ++shallow;
                     } else
                         ++rivalMoves;

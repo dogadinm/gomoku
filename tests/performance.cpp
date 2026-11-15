@@ -1,4 +1,4 @@
-#include "ai.hpp"
+#include "ai/ai.hpp"
 #include <algorithm>
 #include <iostream>
 #include <random>
@@ -27,7 +27,7 @@ int main() {
             ++count;
             total += result.milliseconds;
             maximum = std::max(maximum, result.milliseconds);
-            bool ends = std::abs(result.score) >= 10000000;
+            bool ends = std::abs(result.score) >= AI::WinBound;
             if (ends)
                 ++terminal;
             else {
