@@ -170,7 +170,7 @@ void Board::make(int i, Undo &undo) {
         put(undo.removed[k], 0);
     captured[p] += undo.count;
     ++moves;
-    // Same order of win checks as State::applyLegal.
+    // Win checks in the order of the subject: ten captures, unanswered five, new five.
     if (captured[p] >= 10)
         winner = p;
     else if (pending && hasFive(pending))
