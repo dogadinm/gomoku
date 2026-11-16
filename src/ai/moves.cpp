@@ -1,8 +1,7 @@
 #include "ai/search.hpp"
 namespace gomoku {
 namespace {
-// Far from the horizon (remaining depth >= ThreatDepth) a move that threatens a
-// capture is also tried against a five threat.
+// From this remaining depth, capture threats also answer a five threat.
 constexpr int ThreatDepth = 4;
 constexpr int OrderValue[ShapeCount] = {0, 1, 4, 8, 30, 40, 400, 500, 6000, 100000};
 constexpr int LevelBonus[LevelFive + 1] = {0, 0, 0, 0, 2000, 8000, 20000, 0};
@@ -25,8 +24,7 @@ View view(const Board &b, int i, int player) {
     return v;
 }
 } // namespace
-// Moves are ordered lazily: most nodes cut off after one or two moves, so a
-// full sort would be wasted. Brings the best remaining move to position n.
+// Lazy ordering: brings the best remaining move to position n.
 const AI::Candidate &AI::pick(Candidates &moves, size_t n) {
     size_t best = n;
     for (size_t k = n + 1; k < moves.size(); ++k)
@@ -36,10 +34,7 @@ const AI::Candidate &AI::pick(Candidates &moves, size_t n) {
     std::swap(moves[n], moves[best]);
     return moves[n];
 }
-// Collects the moves worth searching. The tactical situation decides the set:
-// a winning move is tried first; facing a five (or a capture win) only answers
-// to it are kept; facing an open three only blocks, counter-fours and captures
-// are kept. Quiescence and threat search keep only fours.
+// Moves worth searching, chosen by the tactical situation.
 int AI::Worker::generate(Candidates &out, Mode mode, int ttMove, int ply, int depth) const {
     const Board &b = board;
     int us = b.turn, them = 3 - us, status = 0;
@@ -57,9 +52,7 @@ int AI::Worker::generate(Candidates &out, Mode mode, int ttMove, int ply, int de
         if (b.at(i) || !b.near(i))
             continue;
         if (mode != Normal) {
-            // Quiescence and threat search keep only fours, answers to fives
-            // and open threes, and captures: skip quiet cells before the full
-            // (ordering, legality) work.
+            // Only fours, threats and captures matter here: skip the rest early.
             const CellSummary &so = b.summary(i, us), &st = b.summary(i, them);
             if (so.level < LevelFour && st.level < LevelOpenFour &&
                 !(b.rules.captures && (so.pairs || st.pairs)))
@@ -106,9 +99,7 @@ int AI::Worker::generate(Candidates &out, Mode mode, int ttMove, int ply, int de
         if (b.pending == them)
             keep = c.pairs || ourWin; // only a capture can break the five
         else if (threatened)
-            // Far from the horizon a capture threat may also defend: it can
-            // make the coming five breakable. Near it, it would widen every
-            // forced node.
+            // Far from the horizon a capture threat may also defend.
             keep = ourWin || (c.flags & TheirWin) || c.pairs ||
                    (mode == Normal && depth >= ThreatDepth && (c.flags & ThreatFlag));
         else if (mode == Threats || (mode == Quiescence && !openThree))
@@ -125,8 +116,7 @@ int AI::Worker::generate(Candidates &out, Mode mode, int ttMove, int ply, int de
             out[kept++] = c;
         }
     }
-    // In the main search an empty answer set means every reply loses (or the
-    // filter missed a defense): search all moves rather than none.
+    // No answer kept: search everything rather than nothing.
     if (kept || mode != Normal)
         out.resize(kept);
     if (out.empty() && mode == Normal) {

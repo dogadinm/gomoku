@@ -16,9 +16,8 @@ int runThroughCenter(const int v[9], int player) {
     return n;
 }
 } // namespace
-// A shape is defined recursively: a four has one (Block) or several (Flex)
-// empty cells completing five through the new stone; a three is a shape
-// one more stone away from such a four, and so on down to ones.
+// Recursive: a four completes five in one move (Flex: in two ways), a three
+// makes a four, and so on.
 int Tables::classify(unsigned code, int player) {
     int8_t &m = memo[player - 1][code];
     if (m >= 0)
@@ -107,8 +106,7 @@ Tables::Tables() {
                 if (b == 3 - p && c == 3 - p && d == 0)
                     a.flags |= ThreatFlag;
             }
-            // Rule definition of a free three: a six-cell window .XXXX.
-            // whose interior holds three stones and one gap.
+            // Free three (rule): window .XXXX. with three stones and one gap inside.
             for (int start = 0; start < 4; ++start)
                 if ((empty & (0x21u << start)) == (0x21u << start) &&
                     __builtin_popcount((own >> (start + 1)) & 15u) == 3 &&

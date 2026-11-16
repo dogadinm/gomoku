@@ -8,8 +8,7 @@ namespace gomoku {
 struct SearchResult {
     Move move{};
     Choice choice = Choice::None;
-    // depth: last fully completed iteration; selective: deepest ply reached
-    // with quiescence; threat: a forced win by fours was proven.
+    // depth: last full iteration; selective: deepest ply; threat: VCF win.
     int depth = 0, score = 0, selective = 0, threat = 0, threads = 1;
     uint64_t nodes = 0, hits = 0;
     double milliseconds = 0;
@@ -50,9 +49,7 @@ class AI {
         int score = 0, move = -1, depth = -1, flag = 0, generation = 0;
     };
     static constexpr int MaxPly = 64;
-    // Transposition table shared by all search threads without locks: each
-    // entry is two words, the key stored XOR-ed with the data, so a torn
-    // write from a concurrent thread simply fails the key check.
+    // Lock-free shared table: key XOR data, so a torn write fails the check.
     std::unique_ptr<std::atomic<uint64_t>[]> table;
     size_t entries = 0;
     int generation = 0;

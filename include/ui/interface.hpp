@@ -1,12 +1,8 @@
 #pragma once
-// Terminal interface (ncurses):
-//   draw.cpp       drawing only: menu, board and side panel
-//   interface.cpp  the game loop: menu, background AI search, keys
-//   bench.cpp      --bench timing run
+// Terminal interface: draw.cpp, interface.cpp, bench.cpp.
 #include "ai/ai.hpp"
 namespace gomoku {
-// Mode 1: player 1 vs AI, 2: two humans with hints, 3: player 2 vs AI,
-// 4: AI vs AI.
+// Modes: 1 P1 vs AI, 2 two humans, 3 P2 vs AI, 4 AI vs AI.
 bool computer(int mode, int player);
 // What the game screen shows besides the position itself.
 struct Screen {

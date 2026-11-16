@@ -2,14 +2,9 @@
 #include <algorithm>
 #include <cstdlib>
 namespace gomoku {
-// Dynamic part of the evaluation: how each color has actually been playing.
-// Replays the last 12 real actions and counts, per color, consecutive own
-// moves on the same axis (up to four cells apart) and real captures. Recent
-// actions weigh more (1..4); each value is capped at 8. Search branches never
-// change the profile; it is rebuilt before every real AI move.
+// Dynamic part: per color, repeated axes and captures in the last 12 real actions.
 HistoryProfile AI::historyProfile(const Session &session) {
     HistoryProfile profile;
-    // Real completed actions only; hypothetical search branches never train it.
     size_t begin = session.history.size() > 12 ? session.history.size() - 12 : 0;
     Session past = session.replay(begin);
     std::array<Move, 3> previous{};

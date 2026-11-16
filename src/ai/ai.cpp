@@ -11,9 +11,7 @@ SearchResult AI::search(const State &s, int milliseconds, int maxDepth,
     using Clock = std::chrono::steady_clock;
     auto start = Clock::now();
     milliseconds = std::max(1, milliseconds);
-    // The target time may be exceeded by an eighth (420 -> 472 ms) to complete
-    // MinimumDepth. The grading scale reads "more than half a second to find a
-    // move" without "on average", so every move keeps a margin under 500 ms.
+    // Up to 472 ms to finish depth 10; every move stays under 0.5 s.
     auto target = start + std::chrono::milliseconds(milliseconds);
     deadline = target + std::chrono::milliseconds(milliseconds / 8);
     profile = recent;
@@ -21,8 +19,7 @@ SearchResult AI::search(const State &s, int milliseconds, int maxDepth,
     SearchResult result;
     bool fresh = false;
     if (!table) {
-        // The table persists between moves; fall back to a smaller one, or
-        // none, when memory is short.
+        // Kept between moves; smaller or none when memory is short.
         for (size_t size : {size_t(1) << 20, size_t(1) << 16}) {
             table.reset(new (std::nothrow) std::atomic<uint64_t>[2 * size]);
             if (table) {
@@ -33,10 +30,7 @@ SearchResult AI::search(const State &s, int milliseconds, int maxDepth,
         }
         result.lowMemory = !table;
     }
-    // Entries carry the 6-bit generation of their search, and only the current
-    // generation may cut off. When the counter wraps, entries from 64 searches
-    // ago would look current again (with another history profile), so the
-    // table is cleared instead.
+    // Only the current generation may cut off; clear when the 6-bit counter wraps.
     generation = (generation + 1) & 63;
     if (table && (fresh || generation == 0))
         for (size_t k = 0; k < 2 * entries; ++k)
@@ -60,7 +54,7 @@ SearchResult AI::search(const State &s, int milliseconds, int maxDepth,
     std::atomic<uint64_t> helperNodes{0};
     int depthLimit = std::clamp(maxDepth, 1, MaxPly - 1);
     try {
-        // Threat-space search first: a forced win by fours ends the analysis.
+        // A forced win by fours (VCF) ends the search.
         long budget = VcfBudget;
         if (w.vcf(s.turn, VcfDepth, budget, 0) && w.rootBest >= 0) {
             result.move = Board::move(w.rootBest);
@@ -68,8 +62,7 @@ SearchResult AI::search(const State &s, int milliseconds, int maxDepth,
             result.threat = 1;
             result.depth = 1;
         } else {
-            // Lazy SMP: helper threads search the same root, from staggered
-            // depths, and share what they learn through the table.
+            // Lazy SMP: helpers search the same root and share the table.
             unsigned cores = std::thread::hardware_concurrency();
             int count = std::clamp(static_cast<int>(cores), 1, MaxThreads) - 1;
             for (int id = 1; id <= count && table; ++id) {
@@ -86,7 +79,7 @@ SearchResult AI::search(const State &s, int milliseconds, int maxDepth,
                         helperNodes += helper->nodes;
                     });
                 } catch (...) {
-                    break; // no more threads: search with those we have
+                    break;
                 }
             }
             result.threads = 1 + static_cast<int>(helpers.size());
@@ -99,16 +92,12 @@ SearchResult AI::search(const State &s, int milliseconds, int maxDepth,
                     result.move = Board::move(w.rootBest);
                 result.score = score;
                 result.depth = depth;
-                // A proven result ends the search early only when it is exact:
-                // a win on this move. Longer "proofs" rely on the narrowed
-                // answers to threats, so keep deepening (a deeper search may
-                // refute them) until the minimum depth.
+                // Only a win now is exact; longer mates are rechecked up to depth 10.
                 if (score >= Win - 1 || (std::abs(score) >= WinBound && depth >= MinimumDepth))
                     break;
                 previous = last;
                 last = Clock::now() - began;
-                // Predict the next iteration from the growth of the last two
-                // and do not start it if it cannot finish in time.
+                // Do not start an iteration predicted to exceed the target.
                 if (depth >= MinimumDepth) {
                     double growth = previous.count() > 0
                                         ? std::clamp(double(last.count()) / previous.count(), 1.5, 4.0)
@@ -120,8 +109,7 @@ SearchResult AI::search(const State &s, int milliseconds, int maxDepth,
             }
         }
     } catch (const Timeout &) {
-        // Keep the move of the last completed iteration, or a better root
-        // move that the interrupted iteration finished searching.
+        // Last completed iteration, or a better root move already searched.
         if (w.rootBest >= 0 && result.depth > 0)
             result.move = Board::move(w.rootBest);
     }
@@ -179,8 +167,7 @@ SearchResult AI::act(const Session &session, int milliseconds) {
         int best = Infinity;
         for (Move move : session.state.candidates()) {
             State next = session.state;
-            // Setup placements cannot capture; avoid allocating a copy of
-            // the session history merely to evaluate one proposed stone.
+            // Setup stones never capture: place directly.
             next.board[move.y * Size + move.x] = static_cast<int8_t>(next.turn);
             ++next.moves;
             next.turn = 3 - next.turn;

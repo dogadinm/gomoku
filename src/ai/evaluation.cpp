@@ -21,9 +21,7 @@ int AI::evaluate(const State &s) {
 Evaluation AI::inspect(const State &s, const HistoryProfile &profile) {
     return inspect(Board(s), profile);
 }
-// Every empty cell near the stones is scored from each player's point of view:
-// what would a stone there create on each axis (five, open four, four, open
-// three...)? A position is as good as the threats it holds in reserve.
+// Scores each empty cell near the stones by what a stone there would create.
 Evaluation AI::inspect(const Board &b, const HistoryProfile &profile) {
     Evaluation result;
     int fiveCells[3]{};

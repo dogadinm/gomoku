@@ -1,9 +1,7 @@
 #include "ai/search.hpp"
 namespace gomoku {
 namespace {
-// Search shape. Quiet moves past the limit are skipped (selective search);
-// late quiet moves are reduced; quiescence follows fours, answering open
-// threes only right after the horizon.
+// Search widths and quiescence limits.
 constexpr int RootWidth = 24, QuietBase = 3, ReduceFrom = 2, ReduceMore = 6;
 constexpr int QuiescencePlies = 8, OpenThreePlies = 2, QuiescenceFours = 1, QuiescenceThreats = 3;
 // Proven results are stored relative to the node, not the root.
@@ -28,8 +26,7 @@ int AI::Worker::quiescence(int alpha, int beta, int ply, int qdepth) {
         status &= ~Defend;
     int best = -Infinity;
     if (!(status & (Forced | Defend))) {
-        // Stand pat: a quiet position (no five or open three to answer) may
-        // simply be evaluated.
+        // Stand pat: nothing to answer, take the static evaluation.
         best = evaluate();
         if (best >= beta)
             return best;
@@ -39,8 +36,7 @@ int AI::Worker::quiescence(int alpha, int beta, int ply, int qdepth) {
     int tried = 0;
     for (size_t n = 0; n < moves.size(); ++n) {
         const Candidate &c = pick(moves, n);
-        // Beyond the horizon follow the best three double threats (four-three,
-        // open four) but only the best plain four.
+        // Beyond the horizon: up to three double threats, one plain four.
         if (!(status & Forced) &&
             ((c.ours < LevelFourThree && tried >= QuiescenceFours) || tried >= QuiescenceThreats))
             break;
@@ -56,8 +52,7 @@ int AI::Worker::quiescence(int alpha, int beta, int ply, int qdepth) {
     }
     return best;
 }
-// Negamax with alpha-beta: the score of a position for the side to move is
-// the maximum over its moves of minus the score of the resulting position.
+// Negamax: a position is worth the best of minus its children's values.
 int AI::Worker::negamax(int depth, int alpha, int beta, int ply) {
     Board &b = board;
     visit(ply);
@@ -77,8 +72,7 @@ int AI::Worker::negamax(int depth, int alpha, int beta, int ply) {
     int ttMove = -1;
     if (ai.probe(key, entry)) {
         ttMove = entry.move;
-        // Entries from earlier moves only order moves: they came from a
-        // selective search with another history profile.
+        // Older entries only order moves (other search, other profile).
         if (ply > 0 && entry.depth >= depth && entry.generation == ai.generation) {
             ++hits;
             int score = fromTable(entry.score, ply);
@@ -94,14 +88,12 @@ int AI::Worker::negamax(int depth, int alpha, int beta, int ply) {
     int original = alpha, best = -Infinity, bestMove = -1, searched = 0;
     int quiet = ply == 0 ? RootWidth : QuietBase + depth / 2;
     for (size_t n = 0; n < moves.size(); ++n) {
-        // Past the quiet limit only forcing moves remain; their order no
-        // longer matters, so stop selecting.
+        // Past the quiet limit only forcing moves remain: stop selecting.
         const Candidate &c = searched < quiet ? pick(moves, n) : moves[n];
         bool forcing = (status & Forced) || c.ours >= LevelFour || c.cell == ttMove;
         if (searched >= quiet && !forcing)
             continue;
-        // Late move reductions: later, non-forcing moves are first searched
-        // shallower and only re-searched at full depth if they look better.
+        // Late move reductions: later quiet moves are searched shallower first.
         int reduction = 0;
         if (depth >= 3 && searched >= ReduceFrom && !(status & Forced) && c.ours < LevelFour &&
             c.theirs < LevelFour && !c.pairs && c.cell != ttMove)
@@ -112,8 +104,7 @@ int AI::Worker::negamax(int depth, int alpha, int beta, int ply) {
         if (searched == 0)
             score = -negamax(depth - 1, -beta, -alpha, ply + 1);
         else {
-            // Principal variation search: prove with a null window that the
-            // move cannot beat alpha; re-search only when it does.
+            // PVS: null window first, full re-search only if it beats alpha.
             score = -negamax(depth - 1 - reduction, -alpha - 1, -alpha, ply + 1);
             if (score > alpha && reduction)
                 score = -negamax(depth - 1, -alpha - 1, -alpha, ply + 1);

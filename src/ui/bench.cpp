@@ -12,7 +12,6 @@ int benchmark(int games) {
     for (int game = 0; game < games; ++game) {
         Session session;
         State &s = session.state;
-        // Deterministic different openings make timing more useful than an empty board alone.
         session.play({9, 9});
         session.play({8 + game % 3, 10});
         session.play({10, 9});

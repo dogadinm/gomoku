@@ -1,10 +1,5 @@
 #pragma once
-// Internal to the AI: what the files implementing the search share.
-//   table.cpp    transposition table
-//   moves.cpp    move generation and ordering
-//   search.cpp   negamax (minimax) and quiescence
-//   threats.cpp  victory by continuous fours (VCF)
-//   ai.cpp       time control, threads, iterative deepening
+// Shared by table.cpp, moves.cpp, search.cpp, threats.cpp and ai.cpp.
 #include "ai/ai.hpp"
 #include <algorithm>
 #include <chrono>
@@ -13,15 +8,13 @@ constexpr int Infinity = 20000000;
 constexpr int Exact = 0, Lower = 1, Upper = 2;    // bound stored in the table
 constexpr int WinNow = 1, Forced = 2, Defend = 4; // situation reported by generate()
 constexpr uint8_t OurWin = 0x40, TheirWin = 0x80; // candidate flags beside LineInfo flags
-// Which moves generate() keeps: all relevant ones, or only fours (and the
-// answers to open threes in quiescence).
+// What generate() keeps: all relevant moves, or only fours.
 enum Mode { Normal, Quiescence, Threats };
 struct Timeout {};
 inline int terminal(const Board &b, int ply) {
     return b.winner == 3 ? 0 : b.winner == b.turn ? AI::Win - ply : -(AI::Win - ply);
 }
-// Everything one search thread owns: its own board (make/unmake), killer
-// moves and history counters. Only the transposition table is shared.
+// One search thread: own board, killers and history; the table is shared.
 struct AI::Worker {
     AI &ai;
     Board board;

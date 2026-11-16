@@ -31,8 +31,7 @@ struct Terminal {
         endwin();
     }
 };
-// The interactive game. Each frame draws the screen and handles one key; the
-// AI searches in a background thread so the timer keeps running.
+// The interactive game; the AI searches in a background thread.
 class Game {
   public:
     bool step(); // false when the user quits
@@ -43,8 +42,7 @@ class Game {
     Rules selected;
     Screen screen;
     bool menu = true, paused = false, hintJob = false;
-    // One engine for the whole run: its transposition table carries analysis
-    // from one move to the next. Declared before the worker that uses it.
+    // One engine for the run (its table persists); declared before the worker.
     AI engine;
     std::future<SearchResult> worker;
     std::chrono::steady_clock::time_point started;
@@ -228,8 +226,7 @@ bool Game::handleKey(int ch, bool live) {
 }
 // After a failure the game stays usable: hotseat mode on the live position.
 void Game::recover(const char *message) {
-    // A search may still be running on the engine: wait for it (at most about
-    // half a second) so that no second search can start beside it.
+    // Wait for a running search so that no second one starts beside it.
     if (screen.busy && worker.valid())
         worker.wait();
     screen.message = message;

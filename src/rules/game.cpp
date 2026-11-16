@@ -13,8 +13,7 @@ const char *openingName(Opening opening) {
         return "Standard";
     }
 }
-// The rules live in Board (board.cpp), shared with the search; State is the
-// plain position used by the interface, sessions and saves.
+// State is the plain position for the UI and saves; its rules are Board's.
 static bool inside(Move m) {
     return m.x >= 0 && m.y >= 0 && m.x < Size && m.y < Size;
 }

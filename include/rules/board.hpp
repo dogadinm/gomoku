@@ -1,9 +1,7 @@
 #pragma once
 #include "rules/game.hpp"
 namespace gomoku {
-// Shape a player creates on one axis by placing a stone on an empty cell.
-// Flex = open (two ways to continue), Block = one way. Four = one move from
-// five; Three = one move from a four, and so on (classic gomoku taxonomy).
+// Shape a stone creates on one axis. Flex: open (two ways on); Block: one way.
 enum Shape : uint8_t {
     ShapeNone,
     Block1,
@@ -17,8 +15,7 @@ enum Shape : uint8_t {
     Five,
     ShapeCount
 };
-// Everything one axis tells about placing player p on a cell, precomputed for
-// all 65536 encodings of the eight neighbors (four on each side, 2 bits each).
+// One axis of a cell for one player, precomputed for all 65536 neighbor codes.
 struct LineInfo {
     uint8_t shape = ShapeNone;
     uint8_t pairs = 0; // opponent pairs captured on this axis
@@ -36,20 +33,16 @@ enum Level : uint8_t {
     LevelOpenFour,    // open four or two fours: one block cannot stop it
     LevelFive
 };
-// Cached summary of the four axes of a cell for one player. It only changes
-// when a stone within four cells on one of those axes changes.
+// The four axes of a cell for one player, updated incrementally.
 struct CellSummary {
     uint8_t shape[4], axisPairs[4], axisFlags[4];
     uint8_t pairs, freeThrees, level;
-    uint16_t shapes; // the four shapes as base-ShapeCount digits, indexes the level table
+    uint16_t shapes; // the four shapes as one number: index of the level table
     uint8_t flags() const {
         return axisFlags[0] | axisFlags[1] | axisFlags[2] | axisFlags[3];
     }
 };
-// Incremental search position. Cells are padded with four wall cells on each
-// side so that pattern windows never need bounds checks. Every stone change
-// updates the neighbor codes of the 32 cells that can see it, the Zobrist key
-// and the neighborhood counts used for move generation.
+// Search board: walls around the 19x19, make/unmake, incremental codes and summaries.
 class Board {
   public:
     static constexpr int Pad = 4, Width = Size + 2 * Pad, Area = Width * Width, Wall = 3;

@@ -99,15 +99,13 @@ void Board::put(int i, int value) {
     key ^= t.zobrist[old == Wall ? 0 : old][i] ^ t.zobrist[value][i];
     for (int axis = 0; axis < 4; ++axis)
         for (int k = 1; k <= 4; ++k) {
-            // Seen from i + k*step this cell is neighbor offset -k, and from
-            // i - k*step it is offset +k.
+            // From i + k*step this cell is offset -k; from i - k*step, +k.
             int after = 2 * (4 - k), before = 2 * (k + 3);
             uint16_t &a = code[i + k * Step[axis]][axis];
             a = static_cast<uint16_t>((a & ~(3u << after)) | unsigned(value) << after);
             uint16_t &b = code[i - k * Step[axis]][axis];
             b = static_cast<uint16_t>((b & ~(3u << before)) | unsigned(value) << before);
-            // Only empty cells need a current summary; an occupied one is
-            // rebuilt when it is emptied again.
+            // Summaries are kept for empty cells only.
             if (cell[i + k * Step[axis]] == 0)
                 summarize(i + k * Step[axis], axis);
             if (cell[i - k * Step[axis]] == 0)
@@ -126,8 +124,7 @@ void Board::put(int i, int value) {
 }
 bool Board::captureDefense(int player) {
     int enemy = 3 - player;
-    // Mirror of State::captureDefense: can the enemy break the five (or reach
-    // ten captured stones) with one capture?
+    // Can the enemy break the five (or reach ten captures) with one capture?
     for (int i : tables().cells) {
         if (cell[i] != 0 || !capturePairs(i, enemy))
             continue;

@@ -1,8 +1,6 @@
 #include "ai/search.hpp"
 namespace gomoku {
-// Each entry is two words: the data (score, best move, depth, bound,
-// generation) and the key XOR-ed with the data. Threads read and write without
-// locks; an entry torn by a concurrent write fails the key check.
+// Entry: data word and key XOR data; a torn concurrent write fails the check.
 bool AI::probe(uint64_t key, Entry &entry) const {
     if (!table)
         return false;

@@ -1,8 +1,6 @@
 #include "ai/search.hpp"
 namespace gomoku {
-// Victory by continuous fours: the attacker plays only fours, the defender
-// may block the completion square, capture, threaten a capture or win first.
-// Returns true when every defense loses within `depth` attacker moves.
+// VCF: true if fours alone win against every defense within `depth` moves.
 bool AI::Worker::vcf(int attacker, int depth, long &budget, int ply) {
     Board &b = board;
     if (--budget < 0 || ply >= MaxPly - 2)
